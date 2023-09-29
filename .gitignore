@@ -1,0 +1,61 @@
+# Credentials, licenses, and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.token
+secrets/
+licenses/
+license.dat
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Simulator products
+csrc/
+simv*
+work/
+worklib/
+transcript
+modelsim.ini
+vsim.wlf
+*.daidir/
+*.vdb/
+*.ucdb
+*.wlf
+*.vcd
+*.fsdb
+*.shm/
+*.log
+*.jou
+ucli.key
+
+# Generated regression and RL artifacts
+outputs/*
+!outputs/.gitkeep
+checkpoints/
+*.zip
+*.pt
+*.pth
+*.ckpt
+tensorboard/
+
+# Editors and operating systems
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+*~
