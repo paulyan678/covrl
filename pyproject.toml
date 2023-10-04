@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codec-verification-platform"
+version = "0.1.0"
+description = "Reusable UVM regression and coverage-guided stimulus prototype"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Paul", email = "paul.yan@mail.utoronto.ca" }]
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+test = [
+  "mypy>=1.11",
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+rl = [
+  "gymnasium>=0.29,<2",
+  "sb3-contrib>=2.3,<3",
+  "stable-baselines3>=2.3,<3",
+]
+all = [
+  "codec-verification-platform[test,rl]",
+]
+
+[project.scripts]
+codec-regress = "regression.cli:main"
+codec-rl-train = "rl.train:main"
+codec-rl-evaluate = "rl.evaluate:main"
+codec-rl-compare = "rl.compare:main"
+
+[tool.setuptools.packages.find]
+include = ["regression*", "rl*"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+check_untyped_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
