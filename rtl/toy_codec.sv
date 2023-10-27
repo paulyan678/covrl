@@ -34,6 +34,18 @@ module toy_codec (
   logic [5:0]     configured_qp;
   logic [15:0]    next_sequence_id;
 
+  function automatic logic [31:0] transform_payload(
+    input logic [31:0] value,
+    input logic [1:0] frame_type
+  );
+    logic [31:0] codec_key;
+    codec_key = {
+      configured_width[7:0], configured_height[7:0], configured_qp,
+      configured_bit_depth, configured_profile, frame_type, 2'b0
+    };
+    return {value[23:0], value[31:24]} ^ codec_key;
+  endfunction
+
   // The one-entry response register is intentionally simple. Later commits add
   // bounded processing latency without changing this external contract.
   assign req_ready = !rsp_valid || rsp_ready;
@@ -79,6 +91,13 @@ module toy_codec (
             configured <= 1'b0;
             rsp_status <= CODEC_STATUS_BAD_CONFIG;
           end
+        end else if (req_cmd inside {CODEC_CMD_FRAME, CODEC_CMD_DATA}) begin
+          if (configured) begin
+            rsp_status <= CODEC_STATUS_OK;
+            rsp_data   <= transform_payload(req_payload, req_frame_type);
+          end else begin
+            rsp_status <= CODEC_STATUS_NOT_CONFIGURED;
+          end
         end else begin
           rsp_status <= CODEC_STATUS_BAD_CONTROL;
         end
@@ -88,9 +107,7 @@ module toy_codec (
 
   // Reserved until later behavioral features are enabled.
   logic _unused;
-  assign _unused = ^{req_frame_type, req_payload, req_payload_bytes,
-                     req_control, req_inject_error, latency_cycles,
-                     configured_profile, configured_width, configured_height,
-                     configured_bit_depth, configured_qp};
+  assign _unused = ^{req_payload_bytes, req_control, req_inject_error,
+                     latency_cycles};
 
 endmodule
