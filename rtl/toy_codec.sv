@@ -33,6 +33,14 @@ module toy_codec (
   logic [3:0]     configured_bit_depth;
   logic [5:0]     configured_qp;
   logic [15:0]    next_sequence_id;
+  logic           processing;
+  logic [3:0]     delay_count;
+  logic [2:0]     pending_cmd;
+  logic [2:0]     pending_status;
+  logic [31:0]    pending_data;
+  logic [15:0]    pending_sequence_id;
+  logic [2:0]     evaluated_status;
+  logic [31:0]    evaluated_data;
 
   function automatic logic [31:0] transform_payload(
     input logic [31:0] value,
@@ -46,9 +54,24 @@ module toy_codec (
     return {value[23:0], value[31:24]} ^ codec_key;
   endfunction
 
-  // The one-entry response register is intentionally simple. Later commits add
-  // bounded processing latency without changing this external contract.
-  assign req_ready = !rsp_valid || rsp_ready;
+  always_comb begin
+    evaluated_status = CODEC_STATUS_BAD_CONTROL;
+    evaluated_data   = '0;
+    if (req_cmd == CODEC_CMD_CONFIG) begin
+      evaluated_status = codec_config_is_legal(
+        codec_profile_e'(req_profile), req_width, req_height,
+        req_bit_depth, req_qp
+      ) ? CODEC_STATUS_OK : CODEC_STATUS_BAD_CONFIG;
+    end else if (req_cmd inside {CODEC_CMD_FRAME, CODEC_CMD_DATA}) begin
+      evaluated_status = configured ? CODEC_STATUS_OK : CODEC_STATUS_NOT_CONFIGURED;
+      if (configured)
+        evaluated_data = transform_payload(req_payload, req_frame_type);
+    end
+  end
+
+  // A request is accepted only when both the processing slot and held response
+  // slot are empty. Once valid, a response remains stable through backpressure.
+  assign req_ready = !processing && !rsp_valid;
 
   always_ff @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
@@ -59,6 +82,12 @@ module toy_codec (
       configured_bit_depth <= 4'd8;
       configured_qp       <= '0;
       next_sequence_id    <= '0;
+      processing          <= 1'b0;
+      delay_count         <= '0;
+      pending_cmd         <= CODEC_CMD_CONFIG;
+      pending_status      <= CODEC_STATUS_OK;
+      pending_data        <= '0;
+      pending_sequence_id <= '0;
       rsp_valid           <= 1'b0;
       rsp_cmd             <= CODEC_CMD_CONFIG;
       rsp_status          <= CODEC_STATUS_OK;
@@ -68,11 +97,20 @@ module toy_codec (
       if (rsp_valid && rsp_ready)
         rsp_valid <= 1'b0;
 
+      if (processing) begin
+        if (delay_count == 0) begin
+          rsp_valid       <= 1'b1;
+          rsp_cmd         <= pending_cmd;
+          rsp_status      <= pending_status;
+          rsp_data        <= pending_data;
+          rsp_sequence_id <= pending_sequence_id;
+          processing      <= 1'b0;
+        end else begin
+          delay_count <= delay_count - 4'd1;
+        end
+      end
+
       if (req_valid && req_ready) begin
-        rsp_valid       <= 1'b1;
-        rsp_cmd         <= req_cmd;
-        rsp_data        <= '0;
-        rsp_sequence_id <= next_sequence_id;
         next_sequence_id <= next_sequence_id + 16'd1;
 
         if (req_cmd == CODEC_CMD_CONFIG) begin
@@ -86,20 +124,24 @@ module toy_codec (
             configured_height    <= req_height;
             configured_bit_depth <= req_bit_depth;
             configured_qp        <= req_qp;
-            rsp_status           <= CODEC_STATUS_OK;
           end else begin
             configured <= 1'b0;
-            rsp_status <= CODEC_STATUS_BAD_CONFIG;
           end
-        end else if (req_cmd inside {CODEC_CMD_FRAME, CODEC_CMD_DATA}) begin
-          if (configured) begin
-            rsp_status <= CODEC_STATUS_OK;
-            rsp_data   <= transform_payload(req_payload, req_frame_type);
-          end else begin
-            rsp_status <= CODEC_STATUS_NOT_CONFIGURED;
-          end
+        end
+
+        if (latency_cycles == 0) begin
+          rsp_valid       <= 1'b1;
+          rsp_cmd         <= req_cmd;
+          rsp_status      <= evaluated_status;
+          rsp_data        <= evaluated_data;
+          rsp_sequence_id <= next_sequence_id;
         end else begin
-          rsp_status <= CODEC_STATUS_BAD_CONTROL;
+          processing          <= 1'b1;
+          delay_count         <= latency_cycles - 4'd1;
+          pending_cmd         <= req_cmd;
+          pending_status      <= evaluated_status;
+          pending_data        <= evaluated_data;
+          pending_sequence_id <= next_sequence_id;
         end
       end
     end
