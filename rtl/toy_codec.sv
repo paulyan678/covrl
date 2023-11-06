@@ -57,15 +57,46 @@ module toy_codec (
   always_comb begin
     evaluated_status = CODEC_STATUS_BAD_CONTROL;
     evaluated_data   = '0;
-    if (req_cmd == CODEC_CMD_CONFIG) begin
+    if (req_inject_error) begin
+      evaluated_status = CODEC_STATUS_INJECTED_ERROR;
+    end else if (req_cmd == CODEC_CMD_CONFIG) begin
       evaluated_status = codec_config_is_legal(
         codec_profile_e'(req_profile), req_width, req_height,
         req_bit_depth, req_qp
       ) ? CODEC_STATUS_OK : CODEC_STATUS_BAD_CONFIG;
-    end else if (req_cmd inside {CODEC_CMD_FRAME, CODEC_CMD_DATA}) begin
-      evaluated_status = configured ? CODEC_STATUS_OK : CODEC_STATUS_NOT_CONFIGURED;
-      if (configured)
+    end else if (req_cmd == CODEC_CMD_FRAME) begin
+      if (!configured)
+        evaluated_status = CODEC_STATUS_NOT_CONFIGURED;
+      else if (req_frame_type == CODEC_FRAME_RESERVED)
+        evaluated_status = CODEC_STATUS_BAD_INPUT;
+      else begin
+        evaluated_status = CODEC_STATUS_OK;
         evaluated_data = transform_payload(req_payload, req_frame_type);
+      end
+    end else if (req_cmd == CODEC_CMD_DATA) begin
+      if (!configured)
+        evaluated_status = CODEC_STATUS_NOT_CONFIGURED;
+      else if (!(req_payload_bytes inside {3'd1, 3'd2, 3'd3, 3'd4}))
+        evaluated_status = CODEC_STATUS_BAD_INPUT;
+      else begin
+        evaluated_status = CODEC_STATUS_OK;
+        evaluated_data = transform_payload(req_payload, req_frame_type);
+      end
+    end else if (req_cmd == CODEC_CMD_CONTROL) begin
+      if (req_control == CODEC_CTRL_PING) begin
+        evaluated_status = CODEC_STATUS_OK;
+        evaluated_data = 32'hc0de_c0de;
+      end else if (!(req_control inside {
+        CODEC_CTRL_START, CODEC_CTRL_FLUSH, CODEC_CTRL_STOP
+      })) begin
+        evaluated_status = CODEC_STATUS_BAD_CONTROL;
+      end else if (!configured) begin
+        evaluated_status = CODEC_STATUS_NOT_CONFIGURED;
+      end else begin
+        evaluated_status = CODEC_STATUS_OK;
+        if (req_control == CODEC_CTRL_FLUSH)
+          evaluated_data = 32'hf1f1_f1f1;
+      end
     end
   end
 
@@ -113,7 +144,7 @@ module toy_codec (
       if (req_valid && req_ready) begin
         next_sequence_id <= next_sequence_id + 16'd1;
 
-        if (req_cmd == CODEC_CMD_CONFIG) begin
+        if (!req_inject_error && req_cmd == CODEC_CMD_CONFIG) begin
           if (codec_config_is_legal(
             codec_profile_e'(req_profile), req_width, req_height,
             req_bit_depth, req_qp
@@ -124,9 +155,12 @@ module toy_codec (
             configured_height    <= req_height;
             configured_bit_depth <= req_bit_depth;
             configured_qp        <= req_qp;
-          end else begin
-            configured <= 1'b0;
           end
+        end else if (!req_inject_error &&
+                     req_cmd == CODEC_CMD_CONTROL &&
+                     req_control == CODEC_CTRL_STOP &&
+                     evaluated_status == CODEC_STATUS_OK) begin
+          configured <= 1'b0;
         end
 
         if (latency_cycles == 0) begin
@@ -146,10 +180,5 @@ module toy_codec (
       end
     end
   end
-
-  // Reserved until later behavioral features are enabled.
-  logic _unused;
-  assign _unused = ^{req_payload_bytes, req_control, req_inject_error,
-                     latency_cycles};
 
 endmodule
