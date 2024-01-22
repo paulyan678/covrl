@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "project": {
+    "top": "tb_top",
+    "uvm_version": "1.2",
+    "source_manifest": "sim/manifests/uvm.f",
+    "rtl_smoke_manifest": "sim/manifests/rtl_smoke.f",
+    "output_root": "outputs"
+  },
+  "simulators": {
+    "vcs": {
+      "compile_executable_env": "VCS_BIN",
+      "compile_executable_default": "vcs",
+      "coverage_merge_executable_env": "URG_BIN",
+      "coverage_merge_executable_default": "urg"
+    },
+    "questa": {
+      "compile_executable_env": "VLOG_BIN",
+      "compile_executable_default": "vlog",
+      "elaborate_executable_env": "VOPT_BIN",
+      "elaborate_executable_default": "vopt",
+      "run_executable_env": "VSIM_BIN",
+      "run_executable_default": "vsim",
+      "coverage_merge_executable_env": "VCOVER_BIN",
+      "coverage_merge_executable_default": "vcover"
+    },
+    "iverilog": {
+      "compile_executable_env": "IVERILOG_BIN",
+      "compile_executable_default": "iverilog",
+      "run_executable_env": "VVP_BIN",
+      "run_executable_default": "vvp",
+      "scope": "rtl_smoke_only"
+    }
+  }
+}
