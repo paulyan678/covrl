@@ -14,6 +14,7 @@ package codec_uvm_pkg;
   `include "coverage/codec_coverage.sv"
   `include "env/codec_env.sv"
   `include "sequences/codec_base_sequence.sv"
+  `include "sequences/codec_directed_sequence.sv"
   `include "tests/codec_base_test.sv"
 
 endpackage
