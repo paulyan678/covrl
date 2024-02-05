@@ -7,6 +7,7 @@ class codec_monitor extends uvm_monitor;
 
   longint unsigned cycle_count;
   longint unsigned request_cycles[$];
+  int unsigned response_stall_count;
   bit last_reset_n;
 
   `uvm_component_utils(codec_monitor)
@@ -28,6 +29,7 @@ class codec_monitor extends uvm_monitor;
   task run_phase(uvm_phase phase);
     codec_seq_item item;
     cycle_count = 0;
+    response_stall_count = 0;
     last_reset_n = 0;
     forever begin
       @(vif.mon_cb);
@@ -41,22 +43,29 @@ class codec_monitor extends uvm_monitor;
           reset_ap.write(item);
         end
         request_cycles.delete();
+        response_stall_count = 0;
       end else begin
         if (vif.mon_cb.req_valid && vif.mon_cb.req_ready) begin
           item = capture_request();
           request_cycles.push_back(cycle_count);
+          response_stall_count = 0;
           request_ap.write(item);
           `uvm_info("MON/REQ", item.convert2string(), UVM_HIGH)
         end
 
+        if (vif.mon_cb.rsp_valid && !vif.mon_cb.rsp_ready)
+          response_stall_count++;
+
         if (vif.mon_cb.rsp_valid && vif.mon_cb.rsp_ready) begin
           item = capture_response();
+          item.response_stall_cycles = response_stall_count;
           if (request_cycles.size() == 0) begin
             `uvm_error("MON/ORDER", "response observed without a pending request")
           end else begin
             item.observed_latency = cycle_count - request_cycles.pop_front();
           end
           response_ap.write(item);
+          response_stall_count = 0;
           `uvm_info("MON/RSP", item.convert2string(), UVM_HIGH)
         end
       end
