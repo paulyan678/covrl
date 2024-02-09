@@ -19,6 +19,8 @@ class codec_seq_item extends uvm_sequence_item;
   rand int unsigned       latency_cycles;
   rand int unsigned       response_stall_cycles;
   rand int unsigned       inter_transaction_gap;
+  rand bit                reset_after_request;
+  rand int unsigned       reset_cycles;
   rand bit                allow_illegal;
 
   codec_observation_e observation;
@@ -63,6 +65,8 @@ class codec_seq_item extends uvm_sequence_item;
     soft latency_cycles inside {[0:7]};
     soft response_stall_cycles inside {[0:12]};
     soft inter_transaction_gap inside {[0:5]};
+    soft reset_after_request == 0;
+    soft reset_cycles inside {[2:8]};
     soft inject_error == 0;
   }
 
@@ -81,6 +85,8 @@ class codec_seq_item extends uvm_sequence_item;
     `uvm_field_int(latency_cycles, UVM_DEFAULT)
     `uvm_field_int(response_stall_cycles, UVM_DEFAULT)
     `uvm_field_int(inter_transaction_gap, UVM_DEFAULT)
+    `uvm_field_int(reset_after_request, UVM_DEFAULT)
+    `uvm_field_int(reset_cycles, UVM_DEFAULT)
     `uvm_field_int(allow_illegal, UVM_DEFAULT)
     `uvm_field_enum(codec_observation_e, observation, UVM_DEFAULT)
     `uvm_field_enum(codec_status_e, status, UVM_DEFAULT)

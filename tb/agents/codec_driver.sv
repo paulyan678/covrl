@@ -80,6 +80,14 @@ class codec_driver extends uvm_driver #(codec_seq_item);
     end while (!vif.drv_cb.req_ready);
     vif.drv_cb.req_valid <= 1'b0;
 
+    if (req.reset_after_request) begin
+      `uvm_info("DRV/ACTIVE_RESET", $sformatf(
+        "resetting %0d cycles after request handshake", req.reset_cycles),
+        UVM_MEDIUM)
+      apply_reset(req.reset_cycles);
+      return;
+    end
+
     if (cfg.enable_backpressure && req.response_stall_cycles > 0) begin
       vif.drv_cb.rsp_ready <= 1'b0;
       repeat (req.response_stall_cycles) @(vif.drv_cb);
