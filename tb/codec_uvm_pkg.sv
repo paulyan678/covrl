@@ -19,6 +19,7 @@ package codec_uvm_pkg;
   `include "sequences/codec_backpressure_sequence.sv"
   `include "sequences/codec_reset_sequence.sv"
   `include "sequences/codec_error_sequence.sv"
+  `include "sequences/codec_corner_sequence.sv"
   `include "tests/codec_base_test.sv"
 
 endpackage
