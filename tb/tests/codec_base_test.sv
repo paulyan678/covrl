@@ -53,10 +53,14 @@ class codec_base_test extends uvm_test;
     uvm_top.print_topology();
   endfunction
 
+  virtual function uvm_sequence_base create_main_sequence();
+    return codec_base_sequence::type_id::create("sequence");
+  endfunction
+
   task run_phase(uvm_phase phase);
-    codec_base_sequence sequence;
+    uvm_sequence_base sequence;
     phase.raise_objection(this, "running codec base sequence");
-    sequence = codec_base_sequence::type_id::create("sequence");
+    sequence = create_main_sequence();
     sequence.start(env.agent.sequencer);
     phase.drop_objection(this, "codec base sequence completed");
   endtask

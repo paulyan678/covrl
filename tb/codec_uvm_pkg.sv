@@ -21,5 +21,6 @@ package codec_uvm_pkg;
   `include "sequences/codec_error_sequence.sv"
   `include "sequences/codec_corner_sequence.sv"
   `include "tests/codec_base_test.sv"
+  `include "tests/codec_normal_test.sv"
 
 endpackage
