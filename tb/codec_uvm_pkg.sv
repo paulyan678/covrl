@@ -25,5 +25,6 @@ package codec_uvm_pkg;
   `include "tests/codec_random_test.sv"
   `include "tests/codec_backpressure_test.sv"
   `include "tests/codec_reset_recovery_test.sv"
+  `include "tests/codec_invalid_test.sv"
 
 endpackage
