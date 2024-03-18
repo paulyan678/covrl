@@ -28,7 +28,7 @@ class codec_reset_sequence extends codec_base_sequence;
     finish_item(interrupted);
 
     // The first request after reset proves that configuration state was lost.
-    send_data(32'h1111_2222, 4, CODEC_FRAME_P);
+    send_data(32'h1111_2222, 4, CODEC_FRAME_P, 1);
     send_config(CODEC_PROFILE_HIGH, 1920, 1080, 12, 18);
     send_frame(CODEC_FRAME_I, 32'h2000_0001);
     send_data(32'h3333_4444, 4, CODEC_FRAME_I);

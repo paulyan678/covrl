@@ -40,6 +40,7 @@ class codec_driver extends uvm_driver #(codec_seq_item);
     vif.drv_cb.req_payload_bytes <= 3'd4;
     vif.drv_cb.req_control       <= CODEC_CTRL_PING;
     vif.drv_cb.req_inject_error  <= 1'b0;
+    vif.drv_cb.tb_allow_illegal  <= 1'b0;
     vif.drv_cb.latency_cycles    <= cfg.default_latency_cycles[3:0];
     vif.drv_cb.rsp_ready         <= 1'b1;
   endtask
@@ -66,6 +67,7 @@ class codec_driver extends uvm_driver #(codec_seq_item);
     vif.drv_cb.req_payload_bytes <= req.payload_bytes;
     vif.drv_cb.req_control       <= req.control;
     vif.drv_cb.req_inject_error  <= req.inject_error && cfg.enable_error_injection;
+    vif.drv_cb.tb_allow_illegal  <= req.allow_illegal;
     vif.drv_cb.latency_cycles    <= req.latency_cycles[3:0];
     vif.drv_cb.req_valid         <= 1'b1;
 

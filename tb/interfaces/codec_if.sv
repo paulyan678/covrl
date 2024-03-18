@@ -15,6 +15,7 @@ interface codec_if(input logic clk);
   logic [2:0]  req_payload_bytes;
   logic [2:0]  req_control;
   logic        req_inject_error;
+  logic        tb_allow_illegal;
   logic [3:0]  latency_cycles;
 
   logic        rsp_valid;
@@ -30,6 +31,7 @@ interface codec_if(input logic clk);
     output req_valid, req_cmd, req_profile, req_width, req_height;
     output req_frame_type, req_bit_depth, req_qp, req_payload;
     output req_payload_bytes, req_control, req_inject_error;
+    output tb_allow_illegal;
     output rsp_ready, latency_cycles;
     input  req_ready, rsp_valid, rsp_cmd, rsp_status, rsp_data;
     input  rsp_sequence_id, configured;
@@ -40,6 +42,7 @@ interface codec_if(input logic clk);
     input reset_n, req_valid, req_ready, req_cmd, req_profile;
     input req_width, req_height, req_frame_type, req_bit_depth, req_qp;
     input req_payload, req_payload_bytes, req_control, req_inject_error;
+    input tb_allow_illegal;
     input latency_cycles, rsp_valid, rsp_ready, rsp_cmd, rsp_status;
     input rsp_data, rsp_sequence_id, configured;
   endclocking

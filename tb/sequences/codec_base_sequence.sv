@@ -69,7 +69,8 @@ class codec_base_sequence extends uvm_sequence #(codec_seq_item);
   endtask
 
   task send_data(logic [31:0] payload, int unsigned bytes,
-                 codec_frame_type_e frame_type = CODEC_FRAME_P);
+                 codec_frame_type_e frame_type = CODEC_FRAME_P,
+                 bit allow_state_illegal = 0);
     codec_seq_item item;
     item = codec_seq_item::type_id::create("data_item");
     start_item(item);
@@ -87,11 +88,11 @@ class codec_base_sequence extends uvm_sequence #(codec_seq_item);
     item.latency_cycles = cfg.default_latency_cycles;
     item.response_stall_cycles = cfg.default_response_stall_cycles;
     item.inter_transaction_gap = 0;
-    item.allow_illegal = !(bytes inside {[1:4]});
+    item.allow_illegal = allow_state_illegal || !(bytes inside {[1:4]});
     finish_item(item);
   endtask
 
-  task send_control(codec_control_e control);
+  task send_control(codec_control_e control, bit allow_state_illegal = 0);
     codec_seq_item item;
     item = codec_seq_item::type_id::create("control_item");
     start_item(item);
@@ -109,7 +110,9 @@ class codec_base_sequence extends uvm_sequence #(codec_seq_item);
     item.latency_cycles = cfg.default_latency_cycles;
     item.response_stall_cycles = cfg.default_response_stall_cycles;
     item.inter_transaction_gap = 0;
-    item.allow_illegal = 0;
+    item.allow_illegal = allow_state_illegal || !(control inside {
+      CODEC_CTRL_START, CODEC_CTRL_FLUSH, CODEC_CTRL_STOP, CODEC_CTRL_PING
+    });
     finish_item(item);
   endtask
 

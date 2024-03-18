@@ -10,6 +10,7 @@ module tb_top;
 
   codec_if codec_bus(clk);
   toy_codec_adapter adapter(codec_bus);
+  codec_protocol_sva assertions(codec_bus);
 
   initial begin
     uvm_config_db #(virtual codec_if)::set(

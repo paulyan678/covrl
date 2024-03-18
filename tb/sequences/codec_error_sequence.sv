@@ -29,8 +29,8 @@ class codec_error_sequence extends codec_base_sequence;
 
   task body();
     // Requests before configuration must be rejected without corrupting state.
-    send_data(32'h0000_0001, 4, CODEC_FRAME_P);
-    send_control(CODEC_CTRL_START);
+    send_data(32'h0000_0001, 4, CODEC_FRAME_P, 1);
+    send_control(CODEC_CTRL_START, 1);
 
     send_config(CODEC_PROFILE_RESERVED, 1280, 720, 8, 20, 1);
     send_config(CODEC_PROFILE_MAIN, 0, 720, 8, 20, 1);
@@ -44,7 +44,7 @@ class codec_error_sequence extends codec_base_sequence;
     send_control(codec_control_e'(3'd7));
     send_injected_error();
     send_control(CODEC_CTRL_STOP);
-    send_data(32'h0000_0005, 4, CODEC_FRAME_P);
+    send_data(32'h0000_0005, 4, CODEC_FRAME_P, 1);
   endtask
 
 endclass

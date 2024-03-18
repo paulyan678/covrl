@@ -72,6 +72,7 @@ module toy_codec_smoke_tb;
     codec_bus.req_payload_bytes = 3'd4;
     codec_bus.req_control      = CODEC_CTRL_PING;
     codec_bus.req_inject_error = 1'b0;
+    codec_bus.tb_allow_illegal = 1'b0;
     codec_bus.latency_cycles   = 4'd2;
     codec_bus.rsp_ready        = 1'b1;
 
