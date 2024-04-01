@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "project_root": "../..",
+  "defaults": {
+    "timeout_seconds": 30,
+    "parallel_jobs": 4,
+    "reruns": 1,
+    "seed": {"policy": "derived"},
+    "seed_base": 20230921,
+    "coverage": true,
+    "waveform": false,
+    "uvm_verbosity": "UVM_MEDIUM"
+  },
+  "simulators": {
+    "mock": {
+      "source_manifest": "sim/manifests/uvm.f",
+      "top": "tb_top"
+    },
+    "vcs": {
+      "source_manifest": "sim/manifests/uvm.f",
+      "top": "tb_top",
+      "compile_options": ["-sverilog", "-full64"],
+      "elaborate_options": ["-debug_access+pp"],
+      "run_options": ["+UVM_TIMEOUT=1000000,YES"],
+      "coverage_options": ["-cm", "line+cond+fsm+tgl+branch+assert"]
+    },
+    "questa": {
+      "source_manifest": "sim/manifests/uvm.f",
+      "top": "tb_top",
+      "compile_options": ["-sv"],
+      "elaborate_options": ["-debugdb"],
+      "run_options": ["-onfinish", "stop"],
+      "coverage_options": ["+cover=bcesft"]
+    },
+    "iverilog": {
+      "source_manifest": "sim/manifests/rtl_smoke.f",
+      "top": "toy_codec_smoke_tb",
+      "compile_options": ["-g2012", "-Wall"]
+    }
+  },
+  "suites": {
+    "smoke": ["codec_normal_test", "codec_invalid_test"],
+    "nightly": [
+      "codec_normal_test",
+      "codec_random_test",
+      "codec_backpressure_test",
+      "codec_reset_recovery_test",
+      "codec_invalid_test"
+    ],
+    "stress": [
+      "codec_random_test",
+      "codec_backpressure_test",
+      "codec_reset_recovery_test"
+    ],
+    "portable": ["rtl_smoke_test"]
+  },
+  "tests": [
+    {
+      "name": "codec_normal_test",
+      "uvm_test": "codec_normal_test",
+      "suites": ["smoke", "nightly"],
+      "seed": 10101,
+      "waveform": true,
+      "uvm_args": ["+TXN_COUNT=16"]
+    },
+    {
+      "name": "codec_random_test",
+      "uvm_test": "codec_random_test",
+      "suites": ["nightly", "stress"],
+      "seed": {"policy": "derived"},
+      "uvm_args": ["+TXN_COUNT=250"]
+    },
+    {
+      "name": "codec_backpressure_test",
+      "uvm_test": "codec_backpressure_test",
+      "suites": ["nightly", "stress"],
+      "timeout_seconds": 60,
+      "seed": {"policy": "random"},
+      "mock_delay_seconds": 0.02,
+      "uvm_args": ["+TXN_COUNT=100", "+BACKPRESSURE=1", "+LATENCY=7"]
+    },
+    {
+      "name": "codec_reset_recovery_test",
+      "uvm_test": "codec_reset_recovery_test",
+      "suites": ["nightly", "stress"],
+      "uvm_args": ["+TIMEOUT=200"]
+    },
+    {
+      "name": "codec_invalid_test",
+      "uvm_test": "codec_invalid_test",
+      "suites": ["smoke", "nightly"],
+      "uvm_args": ["+ERROR_INJECTION=1"]
+    },
+    {
+      "name": "rtl_smoke_test",
+      "uvm_test": "rtl_smoke_test",
+      "suites": ["portable"],
+      "flow": "smoke",
+      "coverage": false,
+      "uvm_args": []
+    }
+  ]
+}
