@@ -19,7 +19,7 @@
     "vcs": {
       "source_manifest": "sim/manifests/uvm.f",
       "top": "tb_top",
-      "compile_options": ["-sverilog", "-full64"],
+      "compile_options": [],
       "elaborate_options": ["-debug_access+pp"],
       "run_options": ["+UVM_TIMEOUT=1000000,YES"],
       "coverage_options": ["-cm", "line+cond+fsm+tgl+branch+assert"]
