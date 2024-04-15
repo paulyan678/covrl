@@ -27,7 +27,7 @@
     "questa": {
       "source_manifest": "sim/manifests/uvm.f",
       "top": "tb_top",
-      "compile_options": ["-sv"],
+      "compile_options": [],
       "elaborate_options": ["-debugdb"],
       "run_options": ["-onfinish", "stop"],
       "coverage_options": ["+cover=bcesft"]
