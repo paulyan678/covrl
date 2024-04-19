@@ -34,8 +34,8 @@
     },
     "iverilog": {
       "source_manifest": "sim/manifests/rtl_smoke.f",
-      "top": "toy_codec_smoke_tb",
-      "compile_options": ["-g2012", "-Wall"]
+      "top": "toy_codec_native_smoke_tb",
+      "compile_options": ["-Wall"]
     }
   },
   "suites": {
