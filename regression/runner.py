@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
-import time
 from collections.abc import Callable, Iterable
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +17,7 @@ from regression.models import (
     StageResult,
     TestResult,
 )
+from regression.process import ProcessExecutor
 
 Console = Callable[[str], None]
 
@@ -37,6 +36,8 @@ class RegressionRunner:
         output_dir: Path,
         *,
         dry_run: bool = False,
+        jobs: int | None = None,
+        executor: ProcessExecutor | None = None,
         console: Console | None = None,
     ) -> None:
         if simulator not in manifest.simulators:
@@ -46,6 +47,10 @@ class RegressionRunner:
         self.simulator = simulator
         self.output_dir = output_dir.expanduser().resolve()
         self.dry_run = dry_run
+        self.jobs = jobs if jobs is not None else manifest.defaults.parallel_jobs
+        if self.jobs < 1:
+            raise ValueError("jobs must be at least 1")
+        self.executor = executor or ProcessExecutor()
         self.console = console or (lambda _message: None)
         self.adapter = create_adapter(
             simulator, manifest.project_root, manifest.simulators[simulator]
@@ -86,6 +91,9 @@ class RegressionRunner:
                 )
                 return self._summary(started_at, selected, stages, results)
 
+        if not supported:
+            return self._summary(started_at, selected, stages, results)
+
         stage_commands = (
             *(("compile", command) for command in self.adapter.compile_commands(build_dir)),
             *(("elaborate", command) for command in self.adapter.elaborate_commands(build_dir)),
@@ -104,9 +112,11 @@ class RegressionRunner:
                 )
                 return self._summary(started_at, selected, stages, results)
 
-        for index, test in enumerate(supported):
-            seed = test.seed.value or (self.manifest.defaults.seed_base + index)
-            results.append(self._run_one(test, seed, build_dir))
+        seeds = {
+            test.name: test.seed.value or (self.manifest.defaults.seed_base + index)
+            for index, test in enumerate(supported)
+        }
+        results.extend(self._run_parallel(supported, seeds, build_dir))
         return self._summary(started_at, selected, stages, results)
 
     def _run_stage(self, name: str, command: Command) -> StageResult:
@@ -114,21 +124,70 @@ class RegressionRunner:
         if self.dry_run:
             return StageResult(name, Outcome.DRY_RUN, command, reason="command generated only")
         try:
-            returncode, duration = self._execute(command)
+            process = self.executor.run(command, timeout_seconds=900.0)
         except OSError as error:
             return StageResult(
                 name, Outcome.ERROR, command, reason=f"could not launch command: {error}"
             )
-        if returncode != 0:
+        if process.timed_out:
+            return StageResult(
+                name,
+                Outcome.TIMEOUT,
+                command,
+                process.duration_seconds,
+                process.returncode,
+                "stage timeout expired",
+            )
+        if process.returncode != 0:
             return StageResult(
                 name,
                 Outcome.ERROR,
                 command,
-                duration,
-                returncode,
-                f"exit status {returncode}",
+                process.duration_seconds,
+                process.returncode,
+                f"exit status {process.returncode}",
             )
-        return StageResult(name, Outcome.PASSED, command, duration, returncode)
+        return StageResult(
+            name, Outcome.PASSED, command, process.duration_seconds, process.returncode
+        )
+
+    def _run_parallel(
+        self,
+        tests: tuple[TestSpec, ...],
+        seeds: dict[str, int],
+        build_dir: Path,
+    ) -> list[TestResult]:
+        if not tests:
+            return []
+        if self.dry_run:
+            return [self._run_one(test, seeds[test.name], build_dir) for test in tests]
+        results: list[TestResult] = []
+        worker_count = min(self.jobs, len(tests))
+        with ThreadPoolExecutor(
+            max_workers=worker_count, thread_name_prefix="codec-regress"
+        ) as pool:
+            futures: dict[Future[TestResult], TestSpec] = {
+                pool.submit(self._run_one, test, seeds[test.name], build_dir): test
+                for test in tests
+            }
+            for future in as_completed(futures):
+                test = futures[future]
+                try:
+                    result = future.result()
+                except Exception as error:
+                    result = self._nonexecution_result(
+                        test,
+                        Outcome.ERROR,
+                        f"runner worker raised {type(error).__name__}: {error}",
+                    )
+                self.console(
+                    f"{result.test_name} seed={result.seed} "
+                    f"outcome={result.outcome.value} "
+                    f"runtime={result.duration_seconds:.3f}s"
+                )
+                results.append(result)
+        order = {test.name: index for index, test in enumerate(tests)}
+        return sorted(results, key=lambda result: order[result.test_name])
 
     def _run_one(self, test: TestSpec, seed: int, build_dir: Path) -> TestResult:
         test_dir = self.output_dir / "tests" / test.name / "attempt-1"
@@ -150,17 +209,25 @@ class RegressionRunner:
                 waveform_path=plan.waveform_path,
                 failure_reasons=("command generated only; simulator was not executed",),
             )
-        started_at = _utc_now()
         try:
-            returncode, duration = self._execute(plan.command)
-            if test.expected_result == "fail":
-                outcome = Outcome.EXPECTED_FAILURE if returncode else Outcome.UNEXPECTED_PASS
+            process = self.executor.run(plan.command, test.timeout_seconds)
+            if process.timed_out:
+                outcome = Outcome.TIMEOUT
+                reasons = (f"timeout after {test.timeout_seconds:.3f} seconds",)
+            elif test.expected_result == "fail":
+                outcome = (
+                    Outcome.EXPECTED_FAILURE
+                    if process.returncode
+                    else Outcome.UNEXPECTED_PASS
+                )
+                reasons = () if outcome.is_success else ("expected failure passed",)
             else:
-                outcome = Outcome.PASSED if returncode == 0 else Outcome.FAILED
-            reasons = () if outcome.is_success else (f"exit status {returncode}",)
+                outcome = Outcome.PASSED if process.returncode == 0 else Outcome.FAILED
+                reasons = (
+                    () if outcome.is_success else (f"exit status {process.returncode}",)
+                )
         except OSError as error:
-            returncode = None
-            duration = 0.0
+            process = None
             outcome = Outcome.ERROR
             reasons = (f"could not launch test command: {error}",)
         return TestResult(
@@ -172,36 +239,14 @@ class RegressionRunner:
             provenance=self.provenance,
             expected_result=test.expected_result,
             command=plan.command,
-            duration_seconds=duration,
-            returncode=returncode,
-            started_at=started_at,
+            duration_seconds=process.duration_seconds if process else 0.0,
+            returncode=process.returncode if process else None,
+            started_at=process.started_at if process else _utc_now(),
             log_path=plan.command.log_path,
             coverage_path=plan.coverage_path,
             waveform_path=plan.waveform_path,
             failure_reasons=reasons,
         )
-
-    @staticmethod
-    def _execute(command: Command) -> tuple[int, float]:
-        command.cwd.mkdir(parents=True, exist_ok=True)
-        log_path = command.log_path or command.cwd / "process.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        environment = os.environ.copy()
-        environment.update(command.env)
-        start = time.monotonic()
-        with log_path.open("w", encoding="utf-8") as log:
-            log.write(f"$ {command.display()}\n")
-            log.flush()
-            completed = subprocess.run(  # noqa: S603 - shell-free adapter argv
-                list(command.argv),
-                cwd=command.cwd,
-                env=environment,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                text=True,
-                check=False,
-            )
-        return completed.returncode, time.monotonic() - start
 
     def _nonexecution_result(
         self, test: TestSpec, outcome: Outcome, reason: str
