@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +18,7 @@ from regression.models import (
     TestResult,
 )
 from regression.process import ProcessExecutor
+from regression.seeds import resolve_seed
 
 Console = Callable[[str], None]
 
@@ -37,6 +38,9 @@ class RegressionRunner:
         *,
         dry_run: bool = False,
         jobs: int | None = None,
+        base_seed: int | None = None,
+        reruns: int | None = None,
+        seed_overrides: Mapping[str, int] | None = None,
         executor: ProcessExecutor | None = None,
         console: Console | None = None,
     ) -> None:
@@ -50,6 +54,18 @@ class RegressionRunner:
         self.jobs = jobs if jobs is not None else manifest.defaults.parallel_jobs
         if self.jobs < 1:
             raise ValueError("jobs must be at least 1")
+        self.base_seed = base_seed if base_seed is not None else manifest.defaults.seed_base
+        self.reruns = reruns if reruns is not None else manifest.defaults.reruns
+        self.seed_overrides = dict(seed_overrides or {})
+        if self.reruns < 0:
+            raise ValueError("reruns cannot be negative")
+        invalid_overrides = {
+            name: value
+            for name, value in self.seed_overrides.items()
+            if not 1 <= value <= 2_147_483_646
+        }
+        if invalid_overrides:
+            raise ValueError(f"invalid seed override(s): {invalid_overrides}")
         self.executor = executor or ProcessExecutor()
         self.console = console or (lambda _message: None)
         self.adapter = create_adapter(
@@ -72,13 +88,24 @@ class RegressionRunner:
         build_dir.mkdir(parents=True, exist_ok=True)
         stages: list[StageResult] = []
         results: list[TestResult] = []
+        seeds = {
+            test.name: (
+                self.seed_overrides[test.name]
+                if test.name in self.seed_overrides
+                else resolve_seed(test.seed, test.name, self.base_seed)
+            )
+            for test in selected
+        }
 
         supported = tuple(test for test in selected if self.adapter.supports(test))
         for test in selected:
             if test not in supported:
                 results.append(
                     self._nonexecution_result(
-                        test, Outcome.UNSUPPORTED, self.adapter.unsupported_reason(test)
+                        test,
+                        seeds[test.name],
+                        Outcome.UNSUPPORTED,
+                        self.adapter.unsupported_reason(test),
                     )
                 )
 
@@ -86,7 +113,9 @@ class RegressionRunner:
             availability = self.adapter.regression_availability()
             if not availability.available:
                 results.extend(
-                    self._nonexecution_result(test, Outcome.UNAVAILABLE, availability.detail)
+                    self._nonexecution_result(
+                        test, seeds[test.name], Outcome.UNAVAILABLE, availability.detail
+                    )
                     for test in supported
                 )
                 return self._summary(started_at, selected, stages, results)
@@ -105,6 +134,7 @@ class RegressionRunner:
                 results.extend(
                     self._nonexecution_result(
                         test,
+                        seeds[test.name],
                         Outcome.ERROR,
                         f"{stage_name} stage failed: {stage.reason}",
                     )
@@ -112,11 +142,24 @@ class RegressionRunner:
                 )
                 return self._summary(started_at, selected, stages, results)
 
-        seeds = {
-            test.name: test.seed.value or (self.manifest.defaults.seed_base + index)
-            for index, test in enumerate(supported)
-        }
-        results.extend(self._run_parallel(supported, seeds, build_dir))
+        pending = list(supported)
+        for attempt in range(1, self.reruns + 2):
+            attempt_results = self._run_parallel(
+                tuple(pending), seeds, build_dir, attempt
+            )
+            results.extend(attempt_results)
+            rerunnable = {
+                result.test_name
+                for result in attempt_results
+                if result.outcome.is_rerunnable
+            }
+            pending = [test for test in pending if test.name in rerunnable]
+            if not pending:
+                break
+            self.console(
+                f"rerun attempt {attempt + 1}: "
+                + ", ".join(test.name for test in pending)
+            )
         return self._summary(started_at, selected, stages, results)
 
     def _run_stage(self, name: str, command: Command) -> StageResult:
@@ -156,18 +199,23 @@ class RegressionRunner:
         tests: tuple[TestSpec, ...],
         seeds: dict[str, int],
         build_dir: Path,
+        attempt: int,
     ) -> list[TestResult]:
         if not tests:
             return []
         if self.dry_run:
-            return [self._run_one(test, seeds[test.name], build_dir) for test in tests]
+            return [
+                self._run_one(test, seeds[test.name], build_dir, attempt) for test in tests
+            ]
         results: list[TestResult] = []
         worker_count = min(self.jobs, len(tests))
         with ThreadPoolExecutor(
             max_workers=worker_count, thread_name_prefix="codec-regress"
         ) as pool:
             futures: dict[Future[TestResult], TestSpec] = {
-                pool.submit(self._run_one, test, seeds[test.name], build_dir): test
+                pool.submit(
+                    self._run_one, test, seeds[test.name], build_dir, attempt
+                ): test
                 for test in tests
             }
             for future in as_completed(futures):
@@ -177,11 +225,13 @@ class RegressionRunner:
                 except Exception as error:
                     result = self._nonexecution_result(
                         test,
+                        seeds[test.name],
                         Outcome.ERROR,
                         f"runner worker raised {type(error).__name__}: {error}",
+                        attempt=attempt,
                     )
                 self.console(
-                    f"{result.test_name} seed={result.seed} "
+                    f"{result.test_name} attempt={attempt} seed={result.seed} "
                     f"outcome={result.outcome.value} "
                     f"runtime={result.duration_seconds:.3f}s"
                 )
@@ -189,8 +239,10 @@ class RegressionRunner:
         order = {test.name: index for index, test in enumerate(tests)}
         return sorted(results, key=lambda result: order[result.test_name])
 
-    def _run_one(self, test: TestSpec, seed: int, build_dir: Path) -> TestResult:
-        test_dir = self.output_dir / "tests" / test.name / "attempt-1"
+    def _run_one(
+        self, test: TestSpec, seed: int, build_dir: Path, attempt: int
+    ) -> TestResult:
+        test_dir = self.output_dir / "tests" / test.name / f"attempt-{attempt}"
         test_dir.mkdir(parents=True, exist_ok=True)
         plan = self.adapter.test_plan(test, seed, build_dir, test_dir)
         self.console(f"[{self.provenance.value}] run: {plan.command.display()}")
@@ -198,7 +250,7 @@ class RegressionRunner:
             return TestResult(
                 test_name=test.name,
                 simulator=self.simulator,
-                attempt=1,
+                attempt=attempt,
                 seed=seed,
                 outcome=Outcome.DRY_RUN,
                 provenance=self.provenance,
@@ -233,7 +285,7 @@ class RegressionRunner:
         return TestResult(
             test_name=test.name,
             simulator=self.simulator,
-            attempt=1,
+            attempt=attempt,
             seed=seed,
             outcome=outcome,
             provenance=self.provenance,
@@ -249,13 +301,18 @@ class RegressionRunner:
         )
 
     def _nonexecution_result(
-        self, test: TestSpec, outcome: Outcome, reason: str
+        self,
+        test: TestSpec,
+        seed: int,
+        outcome: Outcome,
+        reason: str,
+        *,
+        attempt: int = 1,
     ) -> TestResult:
-        seed = test.seed.value or self.manifest.defaults.seed_base
         return TestResult(
             test_name=test.name,
             simulator=self.simulator,
-            attempt=1,
+            attempt=attempt,
             seed=seed,
             outcome=outcome,
             provenance=self.provenance,
@@ -274,7 +331,9 @@ class RegressionRunner:
     ) -> RunSummary:
         selected_names = tuple(test.name for test in selected)
         order = {name: index for index, name in enumerate(selected_names)}
-        ordered = tuple(sorted(results, key=lambda item: order[item.test_name]))
+        ordered = tuple(
+            sorted(results, key=lambda item: (item.attempt, order[item.test_name]))
+        )
         return RunSummary(
             schema_version=1,
             simulator=self.simulator,
