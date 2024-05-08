@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from regression.adapters import create_adapter
 from regression.config import Manifest, TestSpec
+from regression.detection import classify_outcome, collect_artifacts, detect_failures
 from regression.models import (
     Command,
     Outcome,
@@ -17,7 +19,7 @@ from regression.models import (
     StageResult,
     TestResult,
 )
-from regression.process import ProcessExecutor
+from regression.process import ProcessExecutor, read_log
 from regression.seeds import resolve_seed
 
 Console = Callable[[str], None]
@@ -261,23 +263,26 @@ class RegressionRunner:
                 waveform_path=plan.waveform_path,
                 failure_reasons=("command generated only; simulator was not executed",),
             )
+        self._remove_stale_artifact(plan.coverage_path, test_dir)
+        self._remove_stale_artifact(plan.waveform_path, test_dir)
+        detection = detect_failures("")
+        coverage_path = None
+        waveform_path = None
         try:
             process = self.executor.run(plan.command, test.timeout_seconds)
-            if process.timed_out:
-                outcome = Outcome.TIMEOUT
-                reasons = (f"timeout after {test.timeout_seconds:.3f} seconds",)
-            elif test.expected_result == "fail":
-                outcome = (
-                    Outcome.EXPECTED_FAILURE
-                    if process.returncode
-                    else Outcome.UNEXPECTED_PASS
-                )
-                reasons = () if outcome.is_success else ("expected failure passed",)
-            else:
-                outcome = Outcome.PASSED if process.returncode == 0 else Outcome.FAILED
-                reasons = (
-                    () if outcome.is_success else (f"exit status {process.returncode}",)
-                )
+            detection = detect_failures(read_log(process.log_path))
+            outcome, reasons = classify_outcome(
+                test.expected_result,
+                process.returncode,
+                process.timed_out,
+                detection,
+            )
+            coverage_path, waveform_path, missing = collect_artifacts(
+                plan.coverage_path, plan.waveform_path
+            )
+            if outcome in {Outcome.PASSED, Outcome.EXPECTED_FAILURE} and missing:
+                outcome = Outcome.ERROR
+            reasons += missing
         except OSError as error:
             process = None
             outcome = Outcome.ERROR
@@ -295,10 +300,26 @@ class RegressionRunner:
             returncode=process.returncode if process else None,
             started_at=process.started_at if process else _utc_now(),
             log_path=plan.command.log_path,
-            coverage_path=plan.coverage_path,
-            waveform_path=plan.waveform_path,
+            coverage_path=coverage_path,
+            waveform_path=waveform_path,
+            assertion_failures=detection.assertion_failures,
+            uvm_errors=detection.uvm_errors,
+            uvm_fatals=detection.uvm_fatals,
             failure_reasons=reasons,
         )
+
+    @staticmethod
+    def _remove_stale_artifact(path: Path | None, test_dir: Path) -> None:
+        if path is None or not path.exists():
+            return
+        resolved = path.resolve()
+        resolved_test_dir = test_dir.resolve()
+        if resolved_test_dir not in resolved.parents:
+            raise ValueError(f"refusing to remove artifact outside test directory: {resolved}")
+        if resolved.is_dir():
+            shutil.rmtree(resolved)
+        else:
+            resolved.unlink()
 
     def _nonexecution_result(
         self,
