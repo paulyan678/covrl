@@ -11,6 +11,7 @@ from regression.models import Command, TestRunPlan
 
 class VcsAdapter(SimulatorAdapter):
     name = "vcs"
+    supported_flows = frozenset({"uvm"})
 
     @classmethod
     def regression_tools(cls) -> tuple[tuple[str, str], ...]:

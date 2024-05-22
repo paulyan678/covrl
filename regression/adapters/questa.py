@@ -11,6 +11,7 @@ from regression.models import Command, TestRunPlan
 
 class QuestaAdapter(SimulatorAdapter):
     name = "questa"
+    supported_flows = frozenset({"uvm"})
 
     @classmethod
     def regression_tools(cls) -> tuple[tuple[str, str], ...]:
