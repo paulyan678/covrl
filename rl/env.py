@@ -8,12 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from rl.actions import (
-    DEFAULT_ACTION_CATALOG,
-    ActionCatalog,
-    TransactionType,
-    configuration_is_supported,
-)
+from rl.actions import DEFAULT_ACTION_CATALOG, ActionCatalog
 from rl.backends.base import (
     BackendStep,
     CoverageBackend,
@@ -21,6 +16,7 @@ from rl.backends.base import (
     ProtocolState,
 )
 from rl.backends.mock import MockCoverageBackend
+from rl.masking import compute_action_mask, configuration_choice_mask
 
 try:  # The mock model and unit tests remain usable with only NumPy installed.
     import gymnasium as gym
@@ -288,9 +284,9 @@ class CoverageGuidedCodecEnv(_EnvBase):
         return self._observation(), float(reward), terminated, truncated, info
 
     def action_masks(self) -> np.ndarray:
-        """Return the current policy mask; state-aware filtering is added next."""
+        """SB3-Contrib convention used during rollout and prediction."""
 
-        return np.ones(len(self.catalog), dtype=np.bool_)
+        return compute_action_mask(self.catalog, self._snapshot)
 
     @property
     def snapshot(self) -> CoverageSnapshot:
@@ -370,7 +366,7 @@ class CoverageGuidedCodecEnv(_EnvBase):
             "recent_transactions": recent_actions,
             "protocol_state": state,
             "current_configuration": self._configuration_vector(),
-            "available_configurations": self._configuration_choice_mask(),
+            "available_configurations": configuration_choice_mask(self.catalog, self._snapshot),
             "remaining_budget": np.asarray(
                 [max(0.0, 1.0 - self._step_count / self.episode_config.max_steps)],
                 dtype=np.float32,
@@ -435,16 +431,6 @@ class CoverageGuidedCodecEnv(_EnvBase):
                 vector[offset + choices.index(value)] = 1
             offset += len(choices)
         return vector
-
-    def _configuration_choice_mask(self) -> np.ndarray:
-        return np.asarray(
-            [
-                action.transaction_type is TransactionType.CONFIGURE
-                and configuration_is_supported(action, self._snapshot.capabilities)
-                for action in self.catalog
-            ],
-            dtype=np.int8,
-        )
 
     def _coerce_action(self, action: int) -> int:
         array = np.asarray(action)
