@@ -35,6 +35,9 @@ except ImportError:  # pragma: no cover - selected according to host dependencie
             if seed is not None or not hasattr(self, "np_random"):
                 self.np_random = np.random.default_rng(seed)
 
+        def close(self) -> None:
+            return None
+
     class _Discrete:
         def __init__(self, n: int) -> None:
             self.n = n
