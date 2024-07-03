@@ -12,7 +12,8 @@ from statistics import mean
 import numpy as np
 
 from rl.env import CoverageGuidedCodecEnv, EpisodeConfig
-from rl.evaluate import EpisodeRecord, MaskedPolicy, evaluate_policy
+from rl.evaluate import MaskedPolicy, evaluate_policy
+from rl.metrics import EpisodeMetric, normalized_area_under_curve, write_run_metrics
 
 
 class UniformMaskedPolicy:
@@ -63,7 +64,7 @@ def compare_policy_to_random(
     episodes: int,
     seed: int,
     budget: int,
-) -> tuple[ComparisonSummary, tuple[EpisodeRecord, ...], tuple[EpisodeRecord, ...]]:
+) -> tuple[ComparisonSummary, tuple[EpisodeMetric, ...], tuple[EpisodeMetric, ...]]:
     """Evaluate both strategies with identical episode seeds and step budgets."""
 
     if budget <= 0:
@@ -100,7 +101,7 @@ def compare_policy_to_random(
     return result, ppo_episodes, random_episodes
 
 
-def _strategy_summary(episodes: tuple[EpisodeRecord, ...]) -> StrategySummary:
+def _strategy_summary(episodes: tuple[EpisodeMetric, ...]) -> StrategySummary:
     if not episodes:
         raise ValueError("at least one episode is required")
     return StrategySummary(
@@ -111,19 +112,13 @@ def _strategy_summary(episodes: tuple[EpisodeRecord, ...]) -> StrategySummary:
     )
 
 
-def _mean_curve(episodes: tuple[EpisodeRecord, ...], budget: int) -> tuple[float, ...]:
+def _mean_curve(episodes: tuple[EpisodeMetric, ...], budget: int) -> tuple[float, ...]:
     curves: list[list[float]] = []
     for episode in episodes:
         values = [step.coverage_fraction for step in episode.steps]
         last = values[-1] if values else 0.0
         curves.append((values + [last] * budget)[:budget])
     return tuple(mean(curve[step] for curve in curves) for step in range(budget))
-
-
-def normalized_area_under_curve(episode: EpisodeRecord) -> float:
-    if not episode.steps:
-        return 0.0
-    return mean(step.coverage_fraction for step in episode.steps)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -162,6 +157,13 @@ def main(argv: list[str] | None = None) -> int:
         budget=args.budget,
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    write_run_metrics(args.output_dir, "ppo", ppo_episodes, metadata={"seed": args.seed})
+    write_run_metrics(
+        args.output_dir,
+        "constrained_random",
+        random_episodes,
+        metadata={"seed": args.seed},
+    )
     summary_path = args.output_dir / "comparison.json"
     summary_path.write_text(
         json.dumps(asdict(summary), indent=2, sort_keys=True) + "\n",

@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import json
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 import numpy as np
 
 from rl.env import CoverageGuidedCodecEnv, EpisodeConfig
+from rl.metrics import EpisodeMetric, StepMetric, write_run_metrics
 
 
 class MaskedPolicy(Protocol):
@@ -22,35 +21,6 @@ class MaskedPolicy(Protocol):
         action_masks: np.ndarray,
         deterministic: bool,
     ) -> tuple[object, object]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class StepRecord:
-    episode: int
-    step: int
-    action_index: int
-    action_name: str
-    reward: float
-    cumulative_reward: float
-    coverage_gain: int
-    coverage_count: int
-    coverage_total: int
-    coverage_fraction: float
-    protocol_state: str
-    terminated: bool
-    truncated: bool
-    termination_reason: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class EpisodeRecord:
-    episode: int
-    seed: int
-    strategy: str
-    steps: tuple[StepRecord, ...]
-    final_coverage_fraction: float
-    total_reward: float
-    termination_reason: str | None
 
 
 EnvFactory = Callable[[], CoverageGuidedCodecEnv]
@@ -64,16 +34,16 @@ def evaluate_policy(
     seed: int,
     deterministic: bool = True,
     strategy: str = "masked_ppo",
-) -> tuple[EpisodeRecord, ...]:
+) -> tuple[EpisodeMetric, ...]:
     if episodes <= 0:
         raise ValueError("episodes must be positive")
     env = env_factory()
-    results: list[EpisodeRecord] = []
+    results: list[EpisodeMetric] = []
     for episode_index in range(episodes):
         episode_seed = seed + episode_index
         observation, _ = env.reset(seed=episode_seed)
         cumulative_reward = 0.0
-        steps: list[StepRecord] = []
+        steps: list[StepMetric] = []
         reason: str | None = None
         while True:
             mask = env.action_masks()
@@ -90,7 +60,7 @@ def evaluate_policy(
             reason_value = info.get("termination_reason")
             reason = str(reason_value) if reason_value is not None else None
             steps.append(
-                StepRecord(
+                StepMetric(
                     episode=episode_index,
                     step=int(info["step"]),
                     action_index=action_index,
@@ -111,7 +81,7 @@ def evaluate_policy(
                 break
         final_coverage = steps[-1].coverage_fraction if steps else 0.0
         results.append(
-            EpisodeRecord(
+            EpisodeMetric(
                 episode=episode_index,
                 seed=episode_seed,
                 strategy=strategy,
@@ -121,7 +91,6 @@ def evaluate_policy(
                 termination_reason=reason,
             )
         )
-    env.close()
     return tuple(results)
 
 
@@ -134,12 +103,17 @@ def _scalar_action(value: object) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", type=Path, required=True)
+    parser.add_argument("--model", type=Path, required=True, help="MaskablePPO .zip checkpoint")
+    parser.add_argument("--output-dir", type=Path, default=Path("outputs/rl/evaluation"))
     parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--seed", type=int, default=2024)
     parser.add_argument("--max-steps", type=int, default=200)
     parser.add_argument("--coverage-target", type=float, default=0.90)
-    parser.add_argument("--stochastic", action="store_true")
+    parser.add_argument(
+        "--stochastic",
+        action="store_true",
+        help="sample from the masked policy instead of deterministic prediction",
+    )
     return parser
 
 
@@ -147,8 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         from sb3_contrib import MaskablePPO
-    except ImportError as error:  # pragma: no cover - optional dependency
-        raise SystemExit("install the RL extra: python -m pip install -e '.[rl]'") from error
+    except ImportError as exc:  # pragma: no cover - depends on optional install
+        raise SystemExit("install the RL extra: python -m pip install -e '.[rl]'") from exc
     model = MaskablePPO.load(args.model)
     episode_config = EpisodeConfig(
         max_steps=args.max_steps,
@@ -161,21 +135,13 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         deterministic=not args.stochastic,
     )
-    print(
-        json.dumps(
-            [
-                {
-                    "episode": item.episode,
-                    "seed": item.seed,
-                    "final_coverage_fraction": item.final_coverage_fraction,
-                    "total_reward": item.total_reward,
-                    "termination_reason": item.termination_reason,
-                }
-                for item in episodes
-            ],
-            indent=2,
-        )
+    paths = write_run_metrics(
+        args.output_dir,
+        "masked_ppo_evaluation",
+        episodes,
+        metadata={"model": str(args.model), "seed": args.seed},
     )
+    print(paths.summary)
     return 0
 
 
