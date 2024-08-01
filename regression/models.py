@@ -102,10 +102,7 @@ class Detection:
     @property
     def verification_failed(self) -> bool:
         return bool(
-            self.assertion_failures
-            or self.uvm_errors
-            or self.uvm_fatals
-            or self.failure_markers
+            self.assertion_failures or self.uvm_errors or self.uvm_fatals or self.failure_markers
         )
 
 
@@ -142,9 +139,7 @@ class StageResult:
             outcome=Outcome(str(data["outcome"])),
             command=Command.from_dict(data["command"]),
             duration_seconds=float(data.get("duration_seconds", 0.0)),
-            returncode=(
-                int(data["returncode"]) if data.get("returncode") is not None else None
-            ),
+            returncode=(int(data["returncode"]) if data.get("returncode") is not None else None),
             reason=str(data.get("reason", "")),
         )
 
@@ -215,9 +210,7 @@ class TestResult:
             expected_result=str(data["expected_result"]),
             command=Command.from_dict(command_data) if command_data else None,
             duration_seconds=float(data.get("duration_seconds", 0.0)),
-            returncode=(
-                int(data["returncode"]) if data.get("returncode") is not None else None
-            ),
+            returncode=(int(data["returncode"]) if data.get("returncode") is not None else None),
             started_at=str(data.get("started_at", "")),
             log_path=optional_path("log_path"),
             coverage_path=optional_path("coverage_path"),
@@ -320,9 +313,6 @@ def newest_results(results: Sequence[TestResult]) -> tuple[TestResult, ...]:
     for result in results:
         if result.test_name not in by_name:
             names.append(result.test_name)
-        if (
-            result.test_name not in by_name
-            or result.attempt >= by_name[result.test_name].attempt
-        ):
+        if result.test_name not in by_name or result.attempt >= by_name[result.test_name].attempt:
             by_name[result.test_name] = result
     return tuple(by_name[name] for name in names)

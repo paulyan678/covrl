@@ -47,9 +47,7 @@ class IcarusAdapter(SimulatorAdapter):
     def elaborate_commands(self, build_dir: Path) -> tuple[Command, ...]:
         return ()
 
-    def test_plan(
-        self, test: TestSpec, seed: int, build_dir: Path, test_dir: Path
-    ) -> TestRunPlan:
+    def test_plan(self, test: TestSpec, seed: int, build_dir: Path, test_dir: Path) -> TestRunPlan:
         waveform_path = test_dir / "waves.vcd" if test.waveform else None
         argv: tuple[str, ...] = (
             *self.tool("VVP", "vvp"),
@@ -61,9 +59,7 @@ class IcarusAdapter(SimulatorAdapter):
         )
         if waveform_path:
             argv += ("+WAVES=1", f"+WAVEFORM_FILE={waveform_path}")
-        command = self.command(
-            argv, test_dir, f"Icarus run {test.name}", test_dir / "run.log"
-        )
+        command = self.command(argv, test_dir, f"Icarus run {test.name}", test_dir / "run.log")
         return TestRunPlan(command, None, waveform_path)
 
     def merge_commands(

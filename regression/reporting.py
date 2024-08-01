@@ -144,9 +144,7 @@ def html_text(summary: RunSummary) -> str:
             _reason(result),
         )
         rows.append(
-            "<tr>"
-            + "".join(f"<td>{html.escape(str(cell))}</td>" for cell in cells)
-            + "</tr>"
+            "<tr>" + "".join(f"<td>{html.escape(str(cell))}</td>" for cell in cells) + "</tr>"
         )
     stage_rows = "".join(
         "<tr>"

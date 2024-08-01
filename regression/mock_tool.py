@@ -29,9 +29,7 @@ def _write_mock_artifacts(
         )
     if waveform_path:
         waveform_path.parent.mkdir(parents=True, exist_ok=True)
-        waveform_path.write_text(
-            f"MOCK WAVEFORM test={test_name} seed={seed}\n", encoding="utf-8"
-        )
+        waveform_path.write_text(f"MOCK WAVEFORM test={test_name} seed={seed}\n", encoding="utf-8")
 
 
 def _run(args: argparse.Namespace) -> int:

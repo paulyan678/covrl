@@ -23,14 +23,13 @@ def adapter_names() -> tuple[str, ...]:
     return tuple(sorted(_ADAPTERS))
 
 
-def create_adapter(
-    name: str, project_root: Path, config: SimulatorConfig
-) -> SimulatorAdapter:
+def create_adapter(name: str, project_root: Path, config: SimulatorConfig) -> SimulatorAdapter:
     try:
         adapter_type = _ADAPTERS[name]
     except KeyError as error:
         choices = ", ".join(adapter_names())
         raise ValueError(f"unknown simulator {name!r}; choose one of: {choices}") from error
     return adapter_type(project_root, config)
+
 
 __all__ = ["SimulatorAdapter", "adapter_names", "create_adapter"]

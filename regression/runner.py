@@ -146,21 +146,16 @@ class RegressionRunner:
 
         pending = list(supported)
         for attempt in range(1, self.reruns + 2):
-            attempt_results = self._run_parallel(
-                tuple(pending), seeds, build_dir, attempt
-            )
+            attempt_results = self._run_parallel(tuple(pending), seeds, build_dir, attempt)
             results.extend(attempt_results)
             rerunnable = {
-                result.test_name
-                for result in attempt_results
-                if result.outcome.is_rerunnable
+                result.test_name for result in attempt_results if result.outcome.is_rerunnable
             }
             pending = [test for test in pending if test.name in rerunnable]
             if not pending:
                 break
             self.console(
-                f"rerun attempt {attempt + 1}: "
-                + ", ".join(test.name for test in pending)
+                f"rerun attempt {attempt + 1}: " + ", ".join(test.name for test in pending)
             )
         return self._summary(started_at, selected, stages, results)
 
@@ -206,18 +201,14 @@ class RegressionRunner:
         if not tests:
             return []
         if self.dry_run:
-            return [
-                self._run_one(test, seeds[test.name], build_dir, attempt) for test in tests
-            ]
+            return [self._run_one(test, seeds[test.name], build_dir, attempt) for test in tests]
         results: list[TestResult] = []
         worker_count = min(self.jobs, len(tests))
         with ThreadPoolExecutor(
             max_workers=worker_count, thread_name_prefix="codec-regress"
         ) as pool:
             futures: dict[Future[TestResult], TestSpec] = {
-                pool.submit(
-                    self._run_one, test, seeds[test.name], build_dir, attempt
-                ): test
+                pool.submit(self._run_one, test, seeds[test.name], build_dir, attempt): test
                 for test in tests
             }
             for future in as_completed(futures):
@@ -241,9 +232,7 @@ class RegressionRunner:
         order = {test.name: index for index, test in enumerate(tests)}
         return sorted(results, key=lambda result: order[result.test_name])
 
-    def _run_one(
-        self, test: TestSpec, seed: int, build_dir: Path, attempt: int
-    ) -> TestResult:
+    def _run_one(self, test: TestSpec, seed: int, build_dir: Path, attempt: int) -> TestResult:
         test_dir = self.output_dir / "tests" / test.name / f"attempt-{attempt}"
         test_dir.mkdir(parents=True, exist_ok=True)
         plan = self.adapter.test_plan(test, seed, build_dir, test_dir)
@@ -352,9 +341,7 @@ class RegressionRunner:
     ) -> RunSummary:
         selected_names = tuple(test.name for test in selected)
         order = {name: index for index, name in enumerate(selected_names)}
-        ordered = tuple(
-            sorted(results, key=lambda item: (item.attempt, order[item.test_name]))
-        )
+        ordered = tuple(sorted(results, key=lambda item: (item.attempt, order[item.test_name])))
         return RunSummary(
             schema_version=1,
             simulator=self.simulator,

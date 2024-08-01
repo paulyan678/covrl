@@ -131,9 +131,7 @@ def _merge(args: argparse.Namespace, manifest: Manifest) -> int:
     if args.results:
         summary = load_json(args.results.expanduser().resolve())
         if summary.simulator != args.simulator:
-            raise ValueError(
-                f"results use simulator {summary.simulator!r}, not {args.simulator!r}"
-            )
+            raise ValueError(f"results use simulator {summary.simulator!r}, not {args.simulator!r}")
         databases.extend(coverage_databases(summary, existing_only=not args.dry_run))
     databases = list(dict.fromkeys(databases))
     if not databases:
@@ -227,9 +225,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for result in previous.final_results
                 if result.test_name in names
             }
-            return _execute_run(
-                args, manifest, names, rerun=True, seed_overrides=seed_overrides
-            )
+            return _execute_run(args, manifest, names, rerun=True, seed_overrides=seed_overrides)
         if args.command == "merge":
             return _merge(args, manifest)
         if args.command == "clean":

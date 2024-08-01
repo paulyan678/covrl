@@ -67,9 +67,7 @@ class SimulatorAdapter(ABC):
         return cls._check_tools(cls.coverage_tools())
 
     def supports(self, test: TestSpec) -> bool:
-        return test.flow in self.supported_flows and (
-            self.coverage_supported or not test.coverage
-        )
+        return test.flow in self.supported_flows and (self.coverage_supported or not test.coverage)
 
     def unsupported_reason(self, test: TestSpec) -> str:
         if test.flow not in self.supported_flows:
@@ -87,9 +85,7 @@ class SimulatorAdapter(ABC):
         """Build or optimize the runnable top-level image."""
 
     @abstractmethod
-    def test_plan(
-        self, test: TestSpec, seed: int, build_dir: Path, test_dir: Path
-    ) -> TestRunPlan:
+    def test_plan(self, test: TestSpec, seed: int, build_dir: Path, test_dir: Path) -> TestRunPlan:
         """Return one test command and its anticipated artifacts."""
 
     @abstractmethod
@@ -105,7 +101,5 @@ class SimulatorAdapter(ABC):
         return tuple(test.simulator_options.get(self.name, ()))
 
     @staticmethod
-    def command(
-        argv: tuple[str, ...], cwd: Path, description: str, log_path: Path
-    ) -> Command:
+    def command(argv: tuple[str, ...], cwd: Path, description: str, log_path: Path) -> Command:
         return Command(argv=argv, cwd=cwd, description=description, log_path=log_path)

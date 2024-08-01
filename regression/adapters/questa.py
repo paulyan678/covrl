@@ -78,18 +78,14 @@ class QuestaAdapter(SimulatorAdapter):
             *self.config.elaborate_options,
         )
         return (
-            self.command(
-                argv, self.project_root, "Questa optimize", build_dir / "elaborate.log"
-            ),
+            self.command(argv, self.project_root, "Questa optimize", build_dir / "elaborate.log"),
         )
 
     @staticmethod
     def _tcl_path(path: Path) -> str:
         return "{" + str(path).replace("}", "\\}") + "}"
 
-    def test_plan(
-        self, test: TestSpec, seed: int, build_dir: Path, test_dir: Path
-    ) -> TestRunPlan:
+    def test_plan(self, test: TestSpec, seed: int, build_dir: Path, test_dir: Path) -> TestRunPlan:
         coverage_path = test_dir / "coverage.ucdb" if test.coverage else None
         waveform_path = test_dir / "waves.vcd" if test.waveform else None
         actions: list[str] = []

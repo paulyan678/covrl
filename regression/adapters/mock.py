@@ -28,9 +28,7 @@ class MockAdapter(SimulatorAdapter):
 
     def compile_commands(self, build_dir: Path) -> tuple[Command, ...]:
         argv = (sys.executable, str(self._tool_script()), "compile")
-        return (
-            self.command(argv, self.project_root, "Mock compile", build_dir / "compile.log"),
-        )
+        return (self.command(argv, self.project_root, "Mock compile", build_dir / "compile.log"),)
 
     def elaborate_commands(self, build_dir: Path) -> tuple[Command, ...]:
         argv = (sys.executable, str(self._tool_script()), "elaborate")
@@ -38,9 +36,7 @@ class MockAdapter(SimulatorAdapter):
             self.command(argv, self.project_root, "Mock elaborate", build_dir / "elaborate.log"),
         )
 
-    def test_plan(
-        self, test: TestSpec, seed: int, build_dir: Path, test_dir: Path
-    ) -> TestRunPlan:
+    def test_plan(self, test: TestSpec, seed: int, build_dir: Path, test_dir: Path) -> TestRunPlan:
         coverage_path = test_dir / "coverage.json" if test.coverage else None
         waveform_path = test_dir / "waves.mock" if test.waveform else None
         argv: tuple[str, ...] = (

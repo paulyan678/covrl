@@ -208,15 +208,11 @@ def _parse_defaults(raw: Any) -> Defaults:
         seed_base=_integer(data.get("seed_base", 20_230_921), "defaults.seed_base", 1),
         coverage=_boolean(data.get("coverage", True), "defaults.coverage"),
         waveform=_boolean(data.get("waveform", False), "defaults.waveform"),
-        uvm_verbosity=_string(
-            data.get("uvm_verbosity", "UVM_MEDIUM"), "defaults.uvm_verbosity"
-        ),
+        uvm_verbosity=_string(data.get("uvm_verbosity", "UVM_MEDIUM"), "defaults.uvm_verbosity"),
     )
 
 
-def _parse_simulators(
-    raw: Any, project_root: Path
-) -> dict[str, SimulatorConfig]:
+def _parse_simulators(raw: Any, project_root: Path) -> dict[str, SimulatorConfig]:
     data = _object(raw, "simulators")
     result: dict[str, SimulatorConfig] = {}
     for simulator, raw_config in data.items():
@@ -241,9 +237,7 @@ def _parse_simulators(
         if not source_path.is_absolute():
             source_path = (project_root / source_path).resolve()
         if not source_path.is_file():
-            raise ManifestError(
-                f"simulators.{name}.source_manifest does not exist: {source_path}"
-            )
+            raise ManifestError(f"simulators.{name}.source_manifest does not exist: {source_path}")
         result[name] = SimulatorConfig(
             source_manifest=source_path,
             top=_name(config.get("top", "tb_top"), f"simulators.{name}.top"),
@@ -253,9 +247,7 @@ def _parse_simulators(
             elaborate_options=_options(
                 config.get("elaborate_options", []), f"simulators.{name}.elaborate_options"
             ),
-            run_options=_options(
-                config.get("run_options", []), f"simulators.{name}.run_options"
-            ),
+            run_options=_options(config.get("run_options", []), f"simulators.{name}.run_options"),
             coverage_options=_options(
                 config.get("coverage_options", []), f"simulators.{name}.coverage_options"
             ),
@@ -293,9 +285,7 @@ def _parse_test(raw: Any, index: int, defaults: Defaults) -> TestSpec:
     flow = _string(data.get("flow", "uvm"), f"{location}.flow")
     if flow not in _FLOWS:
         raise ManifestError(f"{location}.flow must be one of {sorted(_FLOWS)}")
-    expected_result = _string(
-        data.get("expected_result", "pass"), f"{location}.expected_result"
-    )
+    expected_result = _string(data.get("expected_result", "pass"), f"{location}.expected_result")
     if expected_result not in _EXPECTED_RESULTS:
         raise ManifestError(
             f"{location}.expected_result must be one of {sorted(_EXPECTED_RESULTS)}"
@@ -311,9 +301,7 @@ def _parse_test(raw: Any, index: int, defaults: Defaults) -> TestSpec:
     }
     mock_behavior = _string(data.get("mock_behavior", "pass"), f"{location}.mock_behavior")
     if mock_behavior not in _MOCK_BEHAVIORS:
-        raise ManifestError(
-            f"{location}.mock_behavior must be one of {sorted(_MOCK_BEHAVIORS)}"
-        )
+        raise ManifestError(f"{location}.mock_behavior must be one of {sorted(_MOCK_BEHAVIORS)}")
     return TestSpec(
         name=name,
         uvm_test=_name(data.get("uvm_test", name), f"{location}.uvm_test"),
@@ -330,9 +318,16 @@ def _parse_test(raw: Any, index: int, defaults: Defaults) -> TestSpec:
             data.get("uvm_verbosity", defaults.uvm_verbosity), f"{location}.uvm_verbosity"
         ),
         uvm_args=_options(data.get("uvm_args", []), f"{location}.uvm_args"),
-        seed=_seed(data.get("seed", {"policy": defaults.seed.policy, **(
-            {"value": defaults.seed.value} if defaults.seed.value is not None else {}
-        )}), f"{location}.seed"),
+        seed=_seed(
+            data.get(
+                "seed",
+                {
+                    "policy": defaults.seed.policy,
+                    **({"value": defaults.seed.value} if defaults.seed.value is not None else {}),
+                },
+            ),
+            f"{location}.seed",
+        ),
         simulator_options=simulator_options,
         mock_behavior=mock_behavior,
         mock_delay_seconds=_positive_number(

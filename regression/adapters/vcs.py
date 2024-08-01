@@ -42,9 +42,7 @@ class VcsAdapter(SimulatorAdapter):
             str(self.config.source_manifest),
             *self.config.compile_options,
         )
-        return (
-            self.command(argv, self.project_root, "VCS compile", build_dir / "compile.log"),
-        )
+        return (self.command(argv, self.project_root, "VCS compile", build_dir / "compile.log"),)
 
     def elaborate_commands(self, build_dir: Path) -> tuple[Command, ...]:
         argv = (
@@ -64,9 +62,7 @@ class VcsAdapter(SimulatorAdapter):
             self.command(argv, self.project_root, "VCS elaborate", build_dir / "elaborate.log"),
         )
 
-    def test_plan(
-        self, test: TestSpec, seed: int, build_dir: Path, test_dir: Path
-    ) -> TestRunPlan:
+    def test_plan(self, test: TestSpec, seed: int, build_dir: Path, test_dir: Path) -> TestRunPlan:
         coverage_path = test_dir / "coverage.vdb" if test.coverage else None
         waveform_path = test_dir / "waves.vcd" if test.waveform else None
         argv: tuple[str, ...] = (
