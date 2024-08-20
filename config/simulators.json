@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "purpose": "Environment-variable reference matching the adapters; test options live in sim/manifests/regression.json",
   "project": {
     "top": "tb_top",
     "uvm_version": "1.2",
@@ -9,25 +10,29 @@
   },
   "simulators": {
     "vcs": {
-      "compile_executable_env": "VCS_BIN",
-      "compile_executable_default": "vcs",
-      "coverage_merge_executable_env": "URG_BIN",
+      "compile_executable_env": "VLOGAN",
+      "compile_executable_default": "vlogan",
+      "elaborate_executable_env": "VCS",
+      "elaborate_executable_default": "vcs",
+      "coverage_merge_executable_env": "URG",
       "coverage_merge_executable_default": "urg"
     },
     "questa": {
-      "compile_executable_env": "VLOG_BIN",
+      "library_executable_env": "VLIB",
+      "library_executable_default": "vlib",
+      "compile_executable_env": "VLOG",
       "compile_executable_default": "vlog",
-      "elaborate_executable_env": "VOPT_BIN",
+      "elaborate_executable_env": "VOPT",
       "elaborate_executable_default": "vopt",
-      "run_executable_env": "VSIM_BIN",
+      "run_executable_env": "VSIM",
       "run_executable_default": "vsim",
-      "coverage_merge_executable_env": "VCOVER_BIN",
+      "coverage_merge_executable_env": "VCOVER",
       "coverage_merge_executable_default": "vcover"
     },
     "iverilog": {
-      "compile_executable_env": "IVERILOG_BIN",
+      "compile_executable_env": "IVERILOG",
       "compile_executable_default": "iverilog",
-      "run_executable_env": "VVP_BIN",
+      "run_executable_env": "VVP",
       "run_executable_default": "vvp",
       "scope": "rtl_smoke_only"
     }
