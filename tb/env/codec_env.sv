@@ -18,6 +18,7 @@ class codec_env extends uvm_env;
     cfg.validate();
 
     uvm_config_db #(codec_env_cfg)::set(this, "agent", "cfg", cfg);
+    uvm_config_db #(codec_env_cfg)::set(this, "scoreboard", "cfg", cfg);
     agent = codec_agent::type_id::create("agent", this);
     reference_model = codec_reference_model::type_id::create("reference_model", this);
     scoreboard = codec_scoreboard::type_id::create("scoreboard", this);

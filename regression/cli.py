@@ -12,7 +12,7 @@ from pathlib import Path
 from regression.adapters import adapter_names, create_adapter
 from regression.config import Manifest, ManifestError, load_manifest
 from regression.coverage import coverage_databases, merge_coverage
-from regression.models import Outcome
+from regression.models import Outcome, Provenance
 from regression.reporting import load_json, terminal_summary, write_reports
 from regression.runner import RegressionRunner
 
@@ -132,7 +132,15 @@ def _merge(args: argparse.Namespace, manifest: Manifest) -> int:
         summary = load_json(args.results.expanduser().resolve())
         if summary.simulator != args.simulator:
             raise ValueError(f"results use simulator {summary.simulator!r}, not {args.simulator!r}")
-        databases.extend(coverage_databases(summary, existing_only=not args.dry_run))
+        if summary.provenance is Provenance.DRY_RUN and not args.dry_run:
+            raise ValueError("dry-run results may only be used with merge --dry-run")
+        databases.extend(
+            coverage_databases(
+                summary,
+                existing_only=not args.dry_run,
+                include_plans=args.dry_run,
+            )
+        )
     databases = list(dict.fromkeys(databases))
     if not databases:
         raise ValueError("provide --results or at least one --database")

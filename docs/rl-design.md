@@ -91,7 +91,8 @@ violations truncate the episode. Evaluation rejects an excluded prediction befor
 
 Every step carries the full immutable snapshot, exact new-bin names, accepted/status/latency data,
 and timeout, invalid-transition, and infrastructure-failure flags. Contract validation rejects
-unknown bins, inconsistent totals, or gains absent from the full snapshot.
+unknown or duplicate bins, non-monotonic snapshots, stale gains, and any mismatch between the
+reported gain and the exact pre-step/post-step coverage delta.
 
 `MockCoverageBackend` deterministically models 90 goals: codec choices, legal and illegal
 configuration, frame/input/timing choices, backpressure and latency classes, reset/error/control
@@ -193,9 +194,11 @@ python -m rl.compare \
   --episodes 20 --budget 200 --seed 2024 --coverage-target 0.99
 ```
 
-The summary reports mean final coverage, normalized coverage-curve area, reward, steps, deltas, and
-mean coverage progression for both strategies. It is a reproducible engineering comparison, not a
-statistical proof of superiority.
+The summary reports mean final coverage, fixed-budget normalized coverage-curve area, reward, steps,
+deltas, and mean coverage progression for both strategies. Shorter episodes are padded with their
+terminal coverage when computing area and progression, so early termination cannot receive a budget
+advantage. Environments are closed after evaluation even when a model or backend raises. This is a
+reproducible engineering comparison, not a statistical proof of superiority.
 
 ## Artifacts and reproducibility
 

@@ -4,7 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from regression.detection import classify_outcome, collect_artifacts, detect_failures
+from regression.detection import (
+    classify_outcome,
+    collect_artifacts,
+    detect_failures,
+    detect_failures_file,
+)
 from regression.models import Outcome
 
 
@@ -23,8 +28,37 @@ class DetectionTests(unittest.TestCase):
         self.assertEqual(outcome, Outcome.FAILED)
         self.assertIn("assertion", reasons[0])
 
+    def test_zero_assertion_summary_is_not_a_failure(self) -> None:
+        detection = detect_failures("Assertion errors: 0\nAssertions: 0\n")
+        self.assertEqual(detection.assertion_failures, 0)
+
+    def test_vendor_assertion_wording_is_detected(self) -> None:
+        detection = detect_failures("Error: Assertion p_ready at 100 ns has failed\n")
+        self.assertEqual(detection.assertion_failures, 1)
+
+    def test_plural_assertion_summaries_are_counted(self) -> None:
+        self.assertEqual(detect_failures("Assertion failures: 3\n").assertion_failures, 3)
+        self.assertEqual(detect_failures("Assertions failed: 2\n").assertion_failures, 2)
+
+    def test_zero_sva_summary_is_not_a_failure(self) -> None:
+        self.assertEqual(detect_failures("SVA errors: 0\n").assertion_failures, 0)
+
+    def test_file_detection_streams_the_complete_log(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "large.log"
+            path.write_text(
+                "Assertion p_early has failed\n" + ("ordinary output\n" * 100_000),
+                encoding="utf-8",
+            )
+            detection = detect_failures_file(path)
+        self.assertEqual(detection.assertion_failures, 1)
+
     def test_uvm_error_event_is_detected(self) -> None:
         detection = detect_failures("UVM_ERROR @ 20: reporter [SB] mismatch\n")
+        self.assertEqual(detection.uvm_errors, 1)
+
+    def test_uvm_file_line_event_is_detected(self) -> None:
+        detection = detect_failures("UVM_ERROR codec_scoreboard.sv(10) @ 5: mismatch\n")
         self.assertEqual(detection.uvm_errors, 1)
 
     def test_event_is_not_hidden_by_an_inconsistent_zero_summary(self) -> None:

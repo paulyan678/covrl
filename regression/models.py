@@ -167,7 +167,24 @@ class TestResult:
 
     @property
     def expectation_met(self) -> bool:
-        return self.outcome in {Outcome.PASSED, Outcome.EXPECTED_FAILURE}
+        has_execution_evidence = (
+            self.command is not None
+            and self.returncode is not None
+            and bool(self.started_at)
+            and self.log_path is not None
+        )
+        if self.expected_result == "pass" and self.outcome is Outcome.PASSED:
+            return (
+                has_execution_evidence
+                and self.returncode == 0
+                and self.assertion_failures == 0
+                and self.uvm_errors == 0
+                and self.uvm_fatals == 0
+                and not self.failure_reasons
+            )
+        if self.expected_result == "fail" and self.outcome is Outcome.EXPECTED_FAILURE:
+            return has_execution_evidence and bool(self.failure_reasons)
+        return False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -245,23 +262,29 @@ class RunSummary:
         return tuple(by_name[name] for name in self.selected_tests if name in by_name)
 
     @property
+    def has_complete_results(self) -> bool:
+        final_names = tuple(result.test_name for result in self.final_results)
+        return (
+            bool(self.selected_tests)
+            and final_names == self.selected_tests
+            and len(set(self.selected_tests)) == len(self.selected_tests)
+        )
+
+    @property
     def successful(self) -> bool:
-        return bool(self.final_results) and all(
-            result.outcome in {Outcome.PASSED, Outcome.EXPECTED_FAILURE}
-            for result in self.final_results
+        return self.has_complete_results and all(
+            result.expectation_met for result in self.final_results
         )
 
     @property
     def completed_without_failures(self) -> bool:
         """True for actual success or a fully generated dry-run plan."""
 
-        return bool(self.final_results) and all(
-            result.outcome.is_success for result in self.final_results
-        )
+        return self.successful or self.plan_only
 
     @property
     def plan_only(self) -> bool:
-        return bool(self.final_results) and all(
+        return self.has_complete_results and all(
             result.outcome is Outcome.DRY_RUN for result in self.final_results
         )
 

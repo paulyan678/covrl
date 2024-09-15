@@ -238,6 +238,22 @@ def _history_checks(records: tuple[HistoryRecord, ...], config: AuditConfig) -> 
     return checks
 
 
+def _all_ref_history_checks(
+    root: Path,
+    records: tuple[HistoryRecord, ...],
+    config: AuditConfig,
+) -> list[AuditCheck]:
+    all_ref_count = int(git_output(root, "rev-list", "--all", "--count").strip())
+    return [
+        _check(
+            "all-reference commit count",
+            all_ref_count == config.expected_commits and all_ref_count == len(records),
+            f"all refs contain the same {all_ref_count} commits as the checked-out history",
+            f"checked-out history has {len(records)} commits but all refs contain {all_ref_count}",
+        )
+    ]
+
+
 def _hygiene_checks(root: Path, config: AuditConfig) -> list[AuditCheck]:
     paths = tracked_paths(root)
     generated = sorted(path.as_posix() for path in paths if is_generated_path(path))
@@ -317,6 +333,7 @@ def audit_repository(root: Path, config: AuditConfig | None = None) -> tuple[Aud
     git_output(root, "rev-parse", "--is-inside-work-tree")
     records = load_history(root)
     checks = _history_checks(records, selected)
+    checks.extend(_all_ref_history_checks(root, records, selected))
     checks.extend(_hygiene_checks(root, selected))
     return tuple(checks)
 

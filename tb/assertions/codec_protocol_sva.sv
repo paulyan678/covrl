@@ -20,7 +20,8 @@ module codec_protocol_sva #(
       $stable({bus.req_cmd, bus.req_profile, bus.req_width, bus.req_height,
                bus.req_frame_type, bus.req_bit_depth, bus.req_qp,
                bus.req_payload, bus.req_payload_bytes, bus.req_control,
-               bus.req_inject_error});
+               bus.req_inject_error, bus.latency_cycles,
+               bus.tb_allow_illegal});
   endproperty
 
   property p_response_held_until_ready;
@@ -53,6 +54,15 @@ module codec_protocol_sva #(
     bus.rsp_valid && bus.rsp_ready |->
       bus.rsp_cmd == expected_cmd &&
       bus.rsp_sequence_id == expected_sequence_id;
+  endproperty
+
+  property p_response_status_legal;
+    bus.rsp_valid |-> bus.rsp_status inside {
+      CODEC_STATUS_OK, CODEC_STATUS_BAD_CONFIG,
+      CODEC_STATUS_NOT_CONFIGURED, CODEC_STATUS_BAD_INPUT,
+      CODEC_STATUS_BAD_CONTROL, CODEC_STATUS_INJECTED_ERROR,
+      CODEC_STATUS_TIMEOUT
+    };
   endproperty
 
   property p_legal_config;
@@ -121,6 +131,8 @@ module codec_protocol_sva #(
     else $error("more than one request is outstanding");
   assert property (p_response_order)
     else $error("response command or sequence is out of order");
+  assert property (p_response_status_legal)
+    else $error("response status encoding is illegal");
   assert property (p_legal_config)
     else $error("configuration fields are illegal");
   assert property (p_legal_command)

@@ -30,7 +30,8 @@ class codec_monitor extends uvm_monitor;
     codec_seq_item item;
     cycle_count = 0;
     response_stall_count = 0;
-    last_reset_n = 0;
+    // Publish the initial reset so reset-without-pending coverage is reachable.
+    last_reset_n = 1;
     forever begin
       @(vif.mon_cb);
       cycle_count++;
@@ -39,6 +40,7 @@ class codec_monitor extends uvm_monitor;
         if (last_reset_n) begin
           item = codec_seq_item::type_id::create("observed_reset");
           item.observation = CODEC_OBS_RESET;
+          item.observed_cycle = cycle_count;
           item.configured_state = 0;
           reset_ap.write(item);
         end
@@ -77,6 +79,7 @@ class codec_monitor extends uvm_monitor;
     codec_seq_item item;
     item = codec_seq_item::type_id::create("observed_request");
     item.observation          = CODEC_OBS_REQUEST;
+    item.observed_cycle       = cycle_count;
     item.cmd                  = codec_cmd_e'(vif.mon_cb.req_cmd);
     item.profile              = codec_profile_e'(vif.mon_cb.req_profile);
     item.width                = vif.mon_cb.req_width;
@@ -97,6 +100,7 @@ class codec_monitor extends uvm_monitor;
     codec_seq_item item;
     item = codec_seq_item::type_id::create("observed_response");
     item.observation      = CODEC_OBS_RESPONSE;
+    item.observed_cycle   = cycle_count;
     item.cmd              = codec_cmd_e'(vif.mon_cb.rsp_cmd);
     item.status           = codec_status_e'(vif.mon_cb.rsp_status);
     item.response_data    = vif.mon_cb.rsp_data;

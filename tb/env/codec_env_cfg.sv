@@ -3,6 +3,7 @@ class codec_env_cfg extends uvm_object;
   uvm_active_passive_enum is_active = UVM_ACTIVE;
 
   int unsigned seed = 1;
+  bit override_sequence_seed = 0;
   int unsigned transaction_count = 100;
   int unsigned driver_timeout_cycles = 100;
   int unsigned scoreboard_timeout_cycles = 500;
@@ -24,6 +25,7 @@ class codec_env_cfg extends uvm_object;
   `uvm_object_utils_begin(codec_env_cfg)
     `uvm_field_enum(uvm_active_passive_enum, is_active, UVM_DEFAULT)
     `uvm_field_int(seed, UVM_DEFAULT)
+    `uvm_field_int(override_sequence_seed, UVM_DEFAULT)
     `uvm_field_int(transaction_count, UVM_DEFAULT)
     `uvm_field_int(driver_timeout_cycles, UVM_DEFAULT)
     `uvm_field_int(scoreboard_timeout_cycles, UVM_DEFAULT)

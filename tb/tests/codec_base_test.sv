@@ -20,7 +20,8 @@ class codec_base_test extends uvm_test;
 
   function void apply_plusargs();
     string verbosity_name;
-    void'($value$plusargs("CODEC_SEED=%d", cfg.seed));
+    if ($value$plusargs("CODEC_SEED=%d", cfg.seed))
+      cfg.override_sequence_seed = 1;
     void'($value$plusargs("TXN_COUNT=%d", cfg.transaction_count));
     void'($value$plusargs("TIMEOUT=%d", cfg.driver_timeout_cycles));
     void'($value$plusargs("SB_TIMEOUT=%d", cfg.scoreboard_timeout_cycles));
@@ -53,15 +54,17 @@ class codec_base_test extends uvm_test;
     uvm_top.print_topology();
   endfunction
 
-  virtual function uvm_sequence_base create_main_sequence();
+  virtual function codec_base_sequence create_main_sequence();
     return codec_base_sequence::type_id::create("sequence");
   endfunction
 
   task run_phase(uvm_phase phase);
-    uvm_sequence_base sequence;
+    codec_base_sequence main_sequence;
     phase.raise_objection(this, "running codec base sequence");
-    sequence = create_main_sequence();
-    sequence.start(env.agent.sequencer);
+    main_sequence = create_main_sequence();
+    if (cfg.override_sequence_seed)
+      main_sequence.set_deterministic_seed(cfg.seed);
+    main_sequence.start(env.agent.sequencer);
     phase.drop_objection(this, "codec base sequence completed");
   endtask
 

@@ -74,9 +74,10 @@ package codec_protocol_pkg;
     logic [5:0] qp
   );
     return profile != CODEC_PROFILE_RESERVED &&
-           width inside {[13'd16:13'd4096]} &&
-           height inside {[13'd16:13'd4096]} &&
-           bit_depth inside {4'd8, 4'd10, 4'd12} &&
+           width >= 13'd16 && width <= 13'd4096 &&
+           height >= 13'd16 && height <= 13'd4096 &&
+           (bit_depth == 4'd8 || bit_depth == 4'd10 ||
+            bit_depth == 4'd12) &&
            qp <= 6'd51;
   endfunction
 

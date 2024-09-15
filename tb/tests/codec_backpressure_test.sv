@@ -10,7 +10,7 @@ class codec_backpressure_test extends codec_base_test;
     cfg.enable_backpressure = 1;
   endfunction
 
-  function uvm_sequence_base create_main_sequence();
+  function codec_base_sequence create_main_sequence();
     return codec_backpressure_sequence::type_id::create("backpressure_sequence");
   endfunction
 

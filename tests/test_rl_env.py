@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from dataclasses import replace
+from typing import cast
 
 from rl.actions import (
     DEFAULT_ACTION_CATALOG,
@@ -24,6 +25,14 @@ def find_action(**fields: object) -> int:
 class InfrastructureFailureBackend(MockCoverageBackend):
     def execute(self, action):  # type: ignore[no-untyped-def]
         return replace(super().execute(action), infrastructure_failure=True)
+
+
+class StaleGainBackend(MockCoverageBackend):
+    def execute(self, action):  # type: ignore[no-untyped-def]
+        result = super().execute(action)
+        if len(self.execution_history) > 1:
+            return replace(result, newly_covered=("configuration.legal",))
+        return result
 
 
 class CoverageEnvironmentTests(unittest.TestCase):
@@ -122,9 +131,26 @@ class CoverageEnvironmentTests(unittest.TestCase):
         _, first_reward, _, _, first_info = self.env.step(self.configure)
         _, repeat_reward, _, _, repeat_info = self.env.step(self.configure)
         self.assertGreater(first_reward, 0)
-        self.assertGreater(first_info["coverage_gain"], 0)
+        self.assertGreater(cast(int, first_info["coverage_gain"]), 0)
         self.assertLess(repeat_reward, 0)
         self.assertEqual(repeat_info["coverage_gain"], 0)
+
+    def test_backend_cannot_re_reward_stale_coverage(self) -> None:
+        env = CoverageGuidedCodecEnv(backend=StaleGainBackend())
+        env.reset(seed=7)
+        env.step(self.configure)
+        with self.assertRaisesRegex(ValueError, "exact snapshot coverage delta"):
+            env.step(self.configure)
+
+    def test_snapshot_mappings_cannot_be_mutated_to_bypass_masks(self) -> None:
+        self.env.step(self.configure)
+        configuration = cast(dict[str, object], self.env.snapshot.current_configuration)
+        metadata = cast(dict[str, object], self.env.snapshot.metadata)
+        with self.assertRaises(TypeError):
+            configuration["profile"] = "high"
+        with self.assertRaises(TypeError):
+            metadata["backend"] = "forged"
+        self.assertEqual(configuration["profile"], "baseline")
 
     def test_step_budget_is_an_explicit_truncation(self) -> None:
         env = CoverageGuidedCodecEnv(
@@ -152,7 +178,7 @@ class CoverageEnvironmentTests(unittest.TestCase):
         self.assertTrue(terminated)
         self.assertFalse(truncated)
         self.assertEqual(info["termination_reason"], "coverage_target")
-        self.assertGreater(reward, info["coverage_gain"])
+        self.assertGreater(reward, cast(int, info["coverage_gain"]))
 
     def test_stale_limit_is_an_explicit_truncation(self) -> None:
         env = CoverageGuidedCodecEnv(

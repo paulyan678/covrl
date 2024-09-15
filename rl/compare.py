@@ -13,7 +13,12 @@ import numpy as np
 
 from rl.env import CoverageGuidedCodecEnv, EpisodeConfig
 from rl.evaluate import MaskedPolicy, evaluate_policy
-from rl.metrics import EpisodeMetric, normalized_area_under_curve, write_run_metrics
+from rl.metrics import (
+    EpisodeMetric,
+    fixed_budget_coverage_curve,
+    normalized_area_under_curve,
+    write_run_metrics,
+)
 
 
 class UniformMaskedPolicy:
@@ -69,6 +74,15 @@ def compare_policy_to_random(
 
     if budget <= 0:
         raise ValueError("budget must be positive")
+    probe = env_factory()
+    try:
+        configured_budget = probe.episode_config.max_steps
+    finally:
+        probe.close()
+    if configured_budget != budget:
+        raise ValueError(
+            f"environment max_steps ({configured_budget}) must equal comparison budget ({budget})"
+        )
     ppo_episodes = evaluate_policy(
         ppo_policy,
         env_factory,
@@ -85,8 +99,8 @@ def compare_policy_to_random(
         deterministic=False,
         strategy="constrained_random",
     )
-    ppo_summary = _strategy_summary(ppo_episodes)
-    random_summary = _strategy_summary(random_episodes)
+    ppo_summary = _strategy_summary(ppo_episodes, budget)
+    random_summary = _strategy_summary(random_episodes, budget)
     result = ComparisonSummary(
         seed=seed,
         episodes=episodes,
@@ -101,12 +115,12 @@ def compare_policy_to_random(
     return result, ppo_episodes, random_episodes
 
 
-def _strategy_summary(episodes: tuple[EpisodeMetric, ...]) -> StrategySummary:
+def _strategy_summary(episodes: tuple[EpisodeMetric, ...], budget: int) -> StrategySummary:
     if not episodes:
         raise ValueError("at least one episode is required")
     return StrategySummary(
         mean_final_coverage=mean(item.final_coverage_fraction for item in episodes),
-        mean_normalized_auc=mean(normalized_area_under_curve(item) for item in episodes),
+        mean_normalized_auc=mean(normalized_area_under_curve(item, budget) for item in episodes),
         mean_reward=mean(item.total_reward for item in episodes),
         mean_steps=mean(len(item.steps) for item in episodes),
     )
@@ -115,9 +129,7 @@ def _strategy_summary(episodes: tuple[EpisodeMetric, ...]) -> StrategySummary:
 def _mean_curve(episodes: tuple[EpisodeMetric, ...], budget: int) -> tuple[float, ...]:
     curves: list[list[float]] = []
     for episode in episodes:
-        values = [step.coverage_fraction for step in episode.steps]
-        last = values[-1] if values else 0.0
-        curves.append((values + [last] * budget)[:budget])
+        curves.append(list(fixed_budget_coverage_curve(episode, budget)))
     return tuple(mean(curve[step] for curve in curves) for step in range(budget))
 
 

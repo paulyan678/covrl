@@ -4,6 +4,7 @@ module tb_top;
   import uvm_pkg::*;
   import codec_protocol_pkg::*;
   import codec_uvm_pkg::*;
+  import toy_codec_uvm_pkg::*;
 
   logic clk = 1'b0;
   always #5ns clk = ~clk;
@@ -11,8 +12,12 @@ module tb_top;
   codec_if codec_bus(clk);
   toy_codec_adapter adapter(codec_bus);
   codec_protocol_sva assertions(codec_bus);
+  toy_codec_state_sva toy_state_assertions(codec_bus);
 
   initial begin
+    codec_reference_model::type_id::set_type_override(
+      toy_codec_reference_model::get_type()
+    );
     uvm_config_db #(virtual codec_if)::set(
       null, "uvm_test_top", "vif", codec_bus
     );

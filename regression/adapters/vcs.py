@@ -70,6 +70,7 @@ class VcsAdapter(SimulatorAdapter):
             f"+UVM_TESTNAME={test.uvm_test}",
             f"+UVM_VERBOSITY={test.uvm_verbosity}",
             f"+ntb_random_seed={seed}",
+            f"+COVERAGE={int(test.coverage)}",
             *test.uvm_args,
             *self.config.run_options,
             *self.test_options(test),

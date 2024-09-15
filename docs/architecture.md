@@ -55,10 +55,14 @@ stable under backpressure, applies configurable latency, numbers accepted reques
 and fields, and returns deterministic status/data. The data path uses a rotate/XOR transform so a
 reference model can predict output without describing a real compression format.
 
-`tb/adapters/toy_codec_adapter.sv` is the only toy-DUT pin mapping. Replace this module (and its RTL
-file-list entry) to integrate another DUT while preserving `codec_if`. If a real interface differs
-too much, replace the interface/driver/monitor/adapter group but preserve the analysis transactions
-published by `codec_agent`.
+`tb/adapters/toy_codec_adapter.sv` is the toy-DUT pin mapping, and
+`tb/adapters/toy_codec_reference_model.sv` contains its matching status/state/data predictor. The
+codec-independent environment creates the `codec_reference_model` base through the UVM factory;
+the separate `toy_codec_uvm_pkg` and `tb_top` install the toy predictor override without importing
+toy code into `codec_uvm_pkg`. A real top can register a different predictor without editing
+`codec_env`. If a real interface differs too much, replace the
+interface/driver/monitor/adapter group but preserve the analysis transactions published by
+`codec_agent`.
 
 ### Agent and configuration
 
@@ -71,6 +75,10 @@ illegal values explicitly.
 availability, backpressure, error injection, coverage, latency, response stalls, verbosity, and
 waves. The active agent creates sequencer and driver; both active and passive modes retain the
 monitor and its analysis ports.
+
+The optional `CODEC_SEED` override drives a sequence-local deterministic stream. Every randomized
+child item is explicitly seeded from that stream, and profile selection uses the same stream rather
+than the simulator process RNG. Without the override, the simulator-native seed remains authoritative.
 
 The driver applies reset, obeys request ready/valid, times out stalled requests/responses, can reset
 during an outstanding request, and independently controls response-ready backpressure. The monitor
@@ -91,13 +99,20 @@ The scoreboard compares expected and actual transactions for:
 - explicit error responses and reset recovery;
 - responses with no prediction and predictions with no response.
 
+Its cycle watchdog consumes `scoreboard_timeout_cycles`, timestamps predictions with the monitor's
+accepted-request cycle, preserves a response accepted on the timeout boundary, removes expired
+predictions, and reports a distinct timeout before end-of-test missing-response checks. Reset clears
+both predictions and age tracking.
+
 Failures use distinct UVM IDs so regression log classification remains actionable.
 
 ### Assertions and coverage
 
 `codec_protocol_sva` checks request and response persistence, stalled-signal stability, request and
 response timeouts, one-outstanding ordering, configuration legality, state-dependent frame/data
-traffic, reset outputs, legal response encodings, and configured-state transitions. Negative tests
+traffic, reset outputs, and legal response encodings. The replaceable `toy_codec_state_sva` checks
+the toy model's one-cycle configured-state transition timing; a real adapter can supply assertions
+for its own state-publication latency. Negative tests
 raise `tb_allow_illegal` only for transitions they intentionally exercise, preventing the checker
 from hiding accidental protocol violations globally.
 
@@ -190,7 +205,8 @@ the backend contract does not mandate transport.
 
 1. Define real codec capabilities and map them to transaction fields.
 2. Create a DUT adapter and update the source manifest.
-3. Replace the toy transform with a trusted reference implementation.
+3. Derive a predictor from `codec_reference_model`, register it through the UVM factory in the
+   DUT-specific top, and implement the trusted reference algorithm there.
 4. Map vendor/IP errors to stable expected status values.
 5. Review reset, outstanding-transaction, backpressure, and ordering assumptions.
 6. Extend sequences and coverage with target features and documented legal relations.

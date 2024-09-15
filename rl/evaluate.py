@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol
 
@@ -39,66 +39,92 @@ def evaluate_policy(
         raise ValueError("episodes must be positive")
     env = env_factory()
     results: list[EpisodeMetric] = []
-    for episode_index in range(episodes):
-        episode_seed = seed + episode_index
-        observation, _ = env.reset(seed=episode_seed)
-        cumulative_reward = 0.0
-        steps: list[StepMetric] = []
-        reason: str | None = None
-        while True:
-            mask = env.action_masks()
-            prediction, _ = policy.predict(
-                observation,
-                action_masks=mask,
-                deterministic=deterministic,
-            )
-            action_index = _scalar_action(prediction)
-            if action_index < 0 or action_index >= len(mask) or not bool(mask[action_index]):
-                raise RuntimeError("policy selected an action excluded by its inference mask")
-            observation, reward, terminated, truncated, info = env.step(action_index)
-            cumulative_reward += reward
-            reason_value = info.get("termination_reason")
-            reason = str(reason_value) if reason_value is not None else None
-            steps.append(
-                StepMetric(
+    try:
+        if not deterministic:
+            seed_policy = getattr(policy, "set_random_seed", None)
+            if callable(seed_policy):
+                seed_policy(seed)
+        for episode_index in range(episodes):
+            episode_seed = seed + episode_index
+            observation, _ = env.reset(seed=episode_seed)
+            cumulative_reward = 0.0
+            steps: list[StepMetric] = []
+            reason: str | None = None
+            while True:
+                mask = env.action_masks()
+                prediction, _ = policy.predict(
+                    observation,
+                    action_masks=mask,
+                    deterministic=deterministic,
+                )
+                action_index = _scalar_action(prediction)
+                if action_index < 0 or action_index >= len(mask) or not bool(mask[action_index]):
+                    raise RuntimeError("policy selected an action excluded by its inference mask")
+                observation, reward, terminated, truncated, info = env.step(action_index)
+                cumulative_reward += reward
+                reason_value = info.get("termination_reason")
+                reason = str(reason_value) if reason_value is not None else None
+                steps.append(
+                    StepMetric(
+                        episode=episode_index,
+                        step=_info_int(info, "step"),
+                        action_index=action_index,
+                        action_name=env.catalog[action_index].name,
+                        reward=reward,
+                        cumulative_reward=cumulative_reward,
+                        coverage_gain=_info_int(info, "coverage_gain"),
+                        coverage_count=_info_int(info, "coverage_count"),
+                        coverage_total=_info_int(info, "coverage_total"),
+                        coverage_fraction=_info_float(info, "coverage_fraction"),
+                        protocol_state=str(info["protocol_state"]),
+                        terminated=terminated,
+                        truncated=truncated,
+                        termination_reason=reason,
+                    )
+                )
+                if terminated or truncated:
+                    break
+            final_coverage = steps[-1].coverage_fraction if steps else 0.0
+            results.append(
+                EpisodeMetric(
                     episode=episode_index,
-                    step=int(info["step"]),
-                    action_index=action_index,
-                    action_name=env.catalog[action_index].name,
-                    reward=reward,
-                    cumulative_reward=cumulative_reward,
-                    coverage_gain=int(info["coverage_gain"]),
-                    coverage_count=int(info["coverage_count"]),
-                    coverage_total=int(info["coverage_total"]),
-                    coverage_fraction=float(info["coverage_fraction"]),
-                    protocol_state=str(info["protocol_state"]),
-                    terminated=terminated,
-                    truncated=truncated,
+                    seed=episode_seed,
+                    strategy=strategy,
+                    steps=tuple(steps),
+                    final_coverage_fraction=final_coverage,
+                    total_reward=cumulative_reward,
                     termination_reason=reason,
                 )
             )
-            if terminated or truncated:
-                break
-        final_coverage = steps[-1].coverage_fraction if steps else 0.0
-        results.append(
-            EpisodeMetric(
-                episode=episode_index,
-                seed=episode_seed,
-                strategy=strategy,
-                steps=tuple(steps),
-                final_coverage_fraction=final_coverage,
-                total_reward=cumulative_reward,
-                termination_reason=reason,
-            )
-        )
-    return tuple(results)
+        return tuple(results)
+    finally:
+        env.close()
+
+
+def _info_int(info: Mapping[str, object], key: str) -> int:
+    value = info[key]
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
+        raise RuntimeError(f"environment info field {key!r} is not an integer")
+    return int(value)
+
+
+def _info_float(info: Mapping[str, object], key: str) -> float:
+    value = info[key]
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+        value, (int, float, np.integer, np.floating)
+    ):
+        raise RuntimeError(f"environment info field {key!r} is not numeric")
+    return float(value)
 
 
 def _scalar_action(value: object) -> int:
     array = np.asarray(value)
     if array.size != 1:
         raise RuntimeError("policy returned a non-scalar action")
-    return int(array.reshape(-1)[0])
+    scalar = array.reshape(-1)[0]
+    if isinstance(scalar, (bool, np.bool_)) or not isinstance(scalar, (int, np.integer)):
+        raise RuntimeError("policy returned a non-integer action")
+    return int(scalar)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -124,6 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError as exc:  # pragma: no cover - depends on optional install
         raise SystemExit("install the RL extra: python -m pip install -e '.[rl]'") from exc
     model = MaskablePPO.load(args.model)
+    model.set_random_seed(args.seed)
     episode_config = EpisodeConfig(
         max_steps=args.max_steps,
         coverage_target=args.coverage_target,

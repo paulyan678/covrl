@@ -68,6 +68,37 @@ class AdapterCommandTests(unittest.TestCase):
         self.assertEqual(merge[0].argv[:2], ("vcover", "merge"))
         self.assertEqual(merge[1].argv[:2], ("vcover", "report"))
 
+    def test_questa_uvm_header_and_library_are_environment_configurable(self) -> None:
+        adapter = create_adapter("questa", self.root, self.manifest.simulators["questa"])
+        with patch.dict(
+            os.environ,
+            {"QUESTA_UVM_SRC": "/opt/uvm/src", "QUESTA_UVM_LIB": "uvm_1_2"},
+        ):
+            command = adapter.compile_commands(Path("/tmp/build"))[1]
+        self.assertIn("+incdir+/opt/uvm/src", command.argv)
+        self.assertIn("uvm_1_2", command.argv)
+
+    def test_manifest_coverage_flag_controls_uvm_collector(self) -> None:
+        disabled = replace(self.normal, coverage=False)
+        for simulator in ("vcs", "questa"):
+            adapter = create_adapter(
+                simulator,
+                self.root,
+                self.manifest.simulators[simulator],
+            )
+            plan = adapter.test_plan(
+                disabled,
+                17,
+                Path("/tmp/build"),
+                Path("/tmp/test"),
+            )
+            self.assertIn("+COVERAGE=0", plan.command.argv)
+            self.assertEqual(
+                sum(value.startswith("+COVERAGE=") for value in plan.command.argv),
+                1,
+            )
+            self.assertIsNone(plan.coverage_path)
+
     def test_icarus_explicitly_supports_only_smoke_flow(self) -> None:
         adapter = create_adapter("iverilog", self.root, self.manifest.simulators["iverilog"])
         self.assertFalse(adapter.supports(self.normal))

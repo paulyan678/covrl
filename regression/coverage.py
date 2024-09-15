@@ -39,10 +39,18 @@ class CoverageMergeResult:
         }
 
 
-def coverage_databases(summary: RunSummary, *, existing_only: bool = True) -> tuple[Path, ...]:
+def coverage_databases(
+    summary: RunSummary,
+    *,
+    existing_only: bool = True,
+    include_plans: bool = False,
+) -> tuple[Path, ...]:
     databases: list[Path] = []
     for result in summary.final_results:
-        if not result.outcome.is_success:
+        usable = result.outcome in {Outcome.PASSED, Outcome.EXPECTED_FAILURE}
+        if include_plans:
+            usable = usable or result.outcome is Outcome.DRY_RUN
+        if not usable:
             continue
         path = result.coverage_path
         if path and (not existing_only or path.exists()) and path not in databases:

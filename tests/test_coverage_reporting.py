@@ -72,6 +72,8 @@ class CoverageAndReportingTests(unittest.TestCase):
         markdown = markdown_text(modified)
         self.assertNotIn("<script>", html)
         self.assertIn("&lt;script&gt;", html)
+        self.assertNotIn("<script>", markdown)
+        self.assertIn("&lt;script&gt;", markdown)
         self.assertIn("\\|", markdown)
         self.assertIn("coverage=", markdown)
 
@@ -90,6 +92,74 @@ class CoverageAndReportingTests(unittest.TestCase):
             path.write_text('{"schema_version": 1}', encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "invalid regression result schema"):
                 load_json(path)
+
+    def test_loaded_results_reject_missing_selected_test(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            summary = self._mock_summary(root)
+            path = write_reports(summary, root / "reports")[0]
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["selected_tests"].append("missing_test")
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "missing result"):
+                load_json(path)
+
+    def test_loaded_results_reject_duplicate_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            summary = self._mock_summary(root)
+            path = write_reports(summary, root / "reports")[0]
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["results"].append(dict(payload["results"][0]))
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "duplicate result attempt"):
+                load_json(path)
+
+    def test_summary_cannot_report_success_with_missing_result(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            summary = self._mock_summary(Path(directory))
+        incomplete = replace(summary, selected_tests=(*summary.selected_tests, "missing_test"))
+        self.assertFalse(incomplete.successful)
+        self.assertFalse(incomplete.completed_without_failures)
+
+    def test_loaded_results_reject_dry_run_with_executed_outcome(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = write_reports(self._mock_summary(root), root / "reports")[0]
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["provenance"] = "dry_run"
+            for result in payload["results"]:
+                result["provenance"] = "dry_run"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "dry-run provenance"):
+                load_json(path)
+
+    def test_loaded_results_reject_expectation_outcome_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = write_reports(self._mock_summary(root), root / "reports")[0]
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["results"][0]["expected_result"] = "fail"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "inconsistent with expected_result"):
+                load_json(path)
+
+    def test_loaded_results_reject_passing_failure_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = write_reports(self._mock_summary(root), root / "reports")[0]
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["results"][0]["returncode"] = 1
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "contains failure evidence"):
+                load_json(path)
+
+    def test_in_memory_success_requires_matching_expectation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            summary = self._mock_summary(Path(directory))
+        mismatched = replace(summary.results[0], expected_result="fail")
+        modified = replace(summary, results=(mismatched, *summary.results[1:]))
+        self.assertFalse(modified.successful)
 
 
 if __name__ == "__main__":

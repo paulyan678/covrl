@@ -9,6 +9,12 @@ protocol without proprietary specifications or IP. The included deterministic DU
 negative testing, reset recovery, and automation executable; the DUT-facing adapter can be replaced
 without rewriting the reusable UVM environment.
 
+## Project background and acknowledgments
+
+This project was developed from September 2023 through September 2024 during my internship at
+NETINT in Toronto. I gratefully acknowledge Peter Wu, my supervisor at NETINT, for his guidance,
+help, and support throughout the project.
+
 ## Architecture
 
 ```mermaid
@@ -64,7 +70,7 @@ top-level protocol checker observes the same interface. See [Architecture](docs/
 rtl/                    behavioral protocol package and toy codec DUT
 tb/
   interfaces/           replaceable codec interface
-  adapters/             toy-DUT-specific pin mapping
+  adapters/             toy-DUT-specific pin mapping and predictor
   agents/               item, sequencer, driver, monitor, active/passive agent
   sequences/            base, directed, random, backpressure, reset, error, corner
   env/                   configuration, environment, reference model
@@ -105,6 +111,7 @@ Create a development environment:
 python -m unittest discover -s tests -v
 python -m ruff check regression rl scripts tests
 python -m ruff format --check regression rl scripts tests
+python -m mypy regression rl scripts tests
 ```
 
 For PPO training, install the optional Gymnasium, Stable-Baselines3, SB3-Contrib, and transitive
@@ -148,8 +155,9 @@ coverage options. A test can set:
 - extra `uvm_args` and per-simulator `simulator_options`;
 - mock-only behavior and delay fields for runner tests.
 
-Parsing is strict. Unknown fields, invalid types, duplicate names, bad suite references, or options
-for unconfigured simulators fail with an actionable message. `--seed-base` changes derived seeds;
+Parsing is strict. Unknown fields, invalid types, duplicate names, bad suite references, reserved
+generated plusarg overrides, or options for unconfigured simulators fail with an actionable message.
+`--seed-base` changes derived seeds;
 automatic retries and `rerun` preserve each failed attempt's resolved seed. Random-policy seeds use
 system entropy and are persisted in `results.json`.
 
@@ -160,6 +168,7 @@ by the adapter from each test's seed policy.
 
 | Plusarg | Meaning |
 |:--|:--|
+| `+CODEC_SEED=<n>` | deterministic sequence-local profile choice and child-item seed override |
 | `+TXN_COUNT=<n>` | random/backpressure transaction count |
 | `+TIMEOUT=<cycles>` | driver request/response timeout |
 | `+SB_TIMEOUT=<cycles>` | scoreboard missing-response timeout |
@@ -198,11 +207,15 @@ export VLOG='vlog'
 export VOPT='vopt'
 export VSIM='vsim'
 export VCOVER='vcover'
+export QUESTA_UVM_SRC="$UVM_HOME/src"
+export QUESTA_UVM_LIB='uvm'
 ```
 
 Set site-specific license variables using the instructions for your installation. The VCS adapter
 generates separate `vlogan`, `vcs`, `simv`, and `urg` stages. The Questa adapter generates `vlib`,
-`vlog`, `vopt`, batch `vsim`, and `vcover` stages. See [`sim/vcs`](sim/vcs/README.md) and
+`vlog`, `vopt`, batch `vsim`, and `vcover` stages. `QUESTA_UVM_SRC` identifies the directory
+containing `uvm_macros.svh`, while `QUESTA_UVM_LIB` selects the precompiled UVM library. See
+[`sim/vcs`](sim/vcs/README.md) and
 [`sim/questa`](sim/questa/README.md).
 
 ## Regression workflows
@@ -277,8 +290,9 @@ Every run writes `results.json`, `report.md`, and `report.html`. Exit status 0 m
 or expected-failure results, or a supported dry-run plan; 1 means test, merge, or selected-flow
 failure; 2 means invalid configuration or unavailable tools. Dry-run reports use `dry_run`
 provenance and never claim execution. Mock reports use `mock` provenance and test orchestration—not
-HDL behavior. Real executions use `real` provenance and retain logs, exit statuses, runtimes,
-failure classifications, coverage paths, and waveform paths.
+HDL behavior. Non-dry invocations of vendor adapters use `real` provenance; missing tools produce an
+explicit `unavailable` outcome, while executed runs retain logs, exit statuses, runtimes, failure
+classifications, coverage paths, and waveform paths.
 
 ## PPO training, evaluation, and comparison
 
@@ -328,9 +342,10 @@ action before calling the backend. This applies masking during both training and
 1. Add the real RTL and its source list without changing codec-independent UVM files.
 2. Implement a wrapper with the `codec_if.dut` modport, mapping abstract configuration, frame/data,
    controls, status, ready/valid behavior, reset, and the `configured` observation to the real IP.
-3. Replace `toy_codec_adapter` in `tb/top/tb_top.sv` and update `sim/manifests/uvm.f`.
-4. Replace the deterministic rotate/XOR reference algorithm with a trusted model or DPI/service
-   boundary for the real encoder or decoder.
+3. Replace `toy_codec_adapter`, `toy_codec_uvm_pkg`, and the toy timing-specific state assertions in
+   `tb/top/tb_top.sv`, then update `sim/manifests/uvm.f`.
+4. Derive a DUT-specific predictor from `codec_reference_model` and replace the top-level UVM
+   factory override for `toy_codec_reference_model` with a trusted model or DPI/service boundary.
 5. Update configuration legality, statuses, assertions, sequences, and the coverage plan for real
    codec features. Document impossible crosses rather than deleting them silently.
 6. If the physical protocol cannot map to `codec_if`, replace the interface, driver, monitor, and
@@ -348,13 +363,14 @@ Validated locally without a simulator:
   failure detection, artifact collection, coverage merging, and all report formats;
 - deterministic mock coverage, observations, rewards, masks, episode rules, inference enforcement,
   reproducibility, metrics, and constrained-random comparison logic;
-- Python unit tests and Ruff checks.
+- real short MaskablePPO training, checkpoint save/load, masked evaluation, and comparison;
+- Python unit tests, Ruff formatting/linting, and MyPy type checking.
 
 This host did not provide VCS, Questa/ModelSim, Icarus, or another HDL simulator. Consequently, local
 validation does not claim HDL compilation, UVM execution, assertion firing, VDB/UCDB creation,
 vendor coverage merging, waveform correctness, or real codec-IP behavior. PPO end-to-end training
-also requires the optional RL installation; the final validation record states whether that smoke
-run was executable on the host.
+was executed against the deterministic mock backend only. Exact commands and results are recorded
+in [docs/validation.md](docs/validation.md).
 
 ## Known limitations
 

@@ -13,7 +13,7 @@ class codec_random_sequence extends codec_base_sequence;
       choices.push_back(CODEC_PROFILE_MAIN);
     if (cfg.enable_high_profile)
       choices.push_back(CODEC_PROFILE_HIGH);
-    return choices[$urandom_range(choices.size() - 1)];
+    return choices[choose_index(choices.size() - 1)];
   endfunction
 
   task send_random_config();
@@ -21,6 +21,7 @@ class codec_random_sequence extends codec_base_sequence;
     codec_profile_e selected_profile;
     selected_profile = choose_profile();
     item = codec_seq_item::type_id::create("random_config");
+    seed_random_item(item);
     start_item(item);
     if (!item.randomize() with {
       cmd == CODEC_CMD_CONFIG;
@@ -45,6 +46,7 @@ class codec_random_sequence extends codec_base_sequence;
 
     repeat (cfg.transaction_count) begin
       item = codec_seq_item::type_id::create("random_traffic");
+      seed_random_item(item);
       start_item(item);
       if (!item.randomize() with {
         cmd dist {

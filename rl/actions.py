@@ -301,6 +301,7 @@ def _validate_action(action: CodecAction) -> None:
         raise ValueError("action name must not be empty")
     if action.backpressure_cycles < 0:
         raise ValueError(f"action {action.name!r} has negative backpressure")
+    required: tuple[object | None, ...]
     if action.transaction_type is TransactionType.CONFIGURE:
         required = (action.profile, action.resolution, action.bit_depth, action.quantizer)
     elif action.transaction_type is TransactionType.FRAME:

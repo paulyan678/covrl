@@ -27,7 +27,7 @@ try:  # The mock model and unit tests remain usable with only NumPy installed.
 except ImportError:  # pragma: no cover - selected according to host dependencies
     GYMNASIUM_AVAILABLE = False
 
-    class _EnvBase:
+    class _EnvBase:  # type: ignore[no-redef]
         np_random: np.random.Generator
 
         def reset(self, *, seed: int | None = None, options: object = None) -> None:
@@ -43,10 +43,9 @@ except ImportError:  # pragma: no cover - selected according to host dependencie
             self.n = n
 
         def contains(self, value: object) -> bool:
-            try:
-                integer = int(value)  # type: ignore[arg-type]
-            except (TypeError, ValueError):
+            if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
                 return False
+            integer = int(value)
             return integer == value and 0 <= integer < self.n
 
     class _Box:
@@ -253,8 +252,9 @@ class CoverageGuidedCodecEnv(_EnvBase):
         if not bool(mask[action_index]):
             return self._masked_illegal_step(action_index)
 
+        previous_snapshot = self._snapshot
         backend_step = self.backend.execute(self.catalog[action_index])
-        self.backend.validate_step(backend_step)
+        self.backend.validate_step(backend_step, previous_snapshot)
         self._snapshot = backend_step.snapshot
         gain = len(backend_step.newly_covered)
         reward = gain * self.reward_config.new_bin

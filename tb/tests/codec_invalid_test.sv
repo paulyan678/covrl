@@ -10,7 +10,7 @@ class codec_invalid_test extends codec_base_test;
     cfg.enable_error_injection = 1;
   endfunction
 
-  function uvm_sequence_base create_main_sequence();
+  function codec_base_sequence create_main_sequence();
     return codec_error_sequence::type_id::create("invalid_sequence");
   endfunction
 

@@ -183,6 +183,7 @@ class MockCoverageBackend(CoverageBackend):
         )
 
     def execute(self, action: CodecAction) -> BackendStep:
+        previous = self.snapshot()
         before = set(self._covered)
         self._step_count += 1
         self._execution_history.append(action.index)
@@ -219,7 +220,7 @@ class MockCoverageBackend(CoverageBackend):
             invalid_transition=invalid_transition,
             details={"action_name": action.name},
         )
-        self.validate_step(result)
+        self.validate_step(result, previous)
         return result
 
     def _configure(self, action: CodecAction) -> tuple[bool, bool, str]:

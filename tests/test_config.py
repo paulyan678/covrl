@@ -69,6 +69,49 @@ class ManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ManifestError, "unknown field.*wavefrom"):
                 load_manifest(path)
 
+    def test_rejects_non_finite_timeout(self) -> None:
+        data = read_manifest_data()
+        data["project_root"] = str(MANIFEST.parents[2])
+        data["tests"][0]["timeout_seconds"] = float("nan")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(ManifestError, "must be finite"):
+                load_manifest(path)
+
+    def test_rejects_numeric_overflow_actionably(self) -> None:
+        data = read_manifest_data()
+        data["project_root"] = str(MANIFEST.parents[2])
+        data["tests"][0]["timeout_seconds"] = 10**400
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(ManifestError, "must be finite"):
+                load_manifest(path)
+
+    def test_repeated_simulator_flags_preserve_order(self) -> None:
+        data = read_manifest_data()
+        data["project_root"] = str(MANIFEST.parents[2])
+        data["tests"][0]["simulator_options"] = {"questa": ["-L", "first_lib", "-L", "second_lib"]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "options.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            manifest = load_manifest(path)
+        self.assertEqual(
+            manifest.tests[0].simulator_options["questa"],
+            ("-L", "first_lib", "-L", "second_lib"),
+        )
+
+    def test_rejects_duplicate_generated_plusarg_controls(self) -> None:
+        data = read_manifest_data()
+        data["project_root"] = str(MANIFEST.parents[2])
+        data["tests"][0]["uvm_args"] = ["+COVERAGE=0"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(ManifestError, "reserved generated control"):
+                load_manifest(path)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -82,7 +82,7 @@ def train_maskable_ppo(config: TrainingConfig, output_dir: Path) -> TrainingArti
     env.reset(seed=config.seed)
     rows: list[dict[str, object]] = []
 
-    class TrainingProgressCallback(BaseCallback):  # type: ignore[misc,valid-type]
+    class TrainingProgressCallback(BaseCallback):
         def _on_step(self) -> bool:
             infos = self.locals.get("infos", [])
             rewards = np.asarray(self.locals.get("rewards", []), dtype=float).reshape(-1)

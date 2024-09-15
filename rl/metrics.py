@@ -63,6 +63,18 @@ class RunSummary:
     termination_reasons: Mapping[str, int] = field(default_factory=dict)
 
 
+def _metric_float(value: object, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"training metric {field_name!r} must be numeric")
+    return float(value)
+
+
+def _metric_int(value: object, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"training metric {field_name!r} must be an integer")
+    return value
+
+
 def summarize(run_name: str, episodes: Sequence[EpisodeMetric]) -> RunSummary:
     if not episodes:
         raise ValueError("at least one episode is required")
@@ -140,16 +152,22 @@ def write_training_progress(
             writer = csv.DictWriter(handle, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(materialized)
-    coverage_values = [float(row["coverage_fraction"]) for row in materialized]
-    reward_values = [float(row.get("reward", 0.0)) for row in materialized]
-    training_steps = [int(row.get("training_step", 0)) for row in materialized]
+    coverage_values = [
+        _metric_float(row["coverage_fraction"], "coverage_fraction") for row in materialized
+    ]
+    reward_values = [_metric_float(row.get("reward", 0.0), "reward") for row in materialized]
+    training_steps = [
+        _metric_int(row.get("training_step", 0), "training_step") for row in materialized
+    ]
     summary_payload = {
         "samples": len(materialized),
         "last_training_step": max(training_steps, default=0),
         "final_coverage_fraction": coverage_values[-1] if coverage_values else 0.0,
         "max_coverage_fraction": max(coverage_values, default=0.0),
         "mean_step_reward": mean(reward_values) if reward_values else 0.0,
-        "total_new_bins": sum(int(row.get("coverage_gain", 0)) for row in materialized),
+        "total_new_bins": sum(
+            _metric_int(row.get("coverage_gain", 0), "coverage_gain") for row in materialized
+        ),
     }
     summary_path.write_text(
         json.dumps(summary_payload, indent=2, sort_keys=True) + "\n",
@@ -170,9 +188,23 @@ def read_episode_metrics(path: Path) -> tuple[EpisodeMetric, ...]:
     return tuple(episodes)
 
 
-def normalized_area_under_curve(episode: EpisodeMetric) -> float:
-    """Mean covered fraction across an episode (larger means earlier gains)."""
+def normalized_area_under_curve(episode: EpisodeMetric, budget: int | None = None) -> float:
+    """Mean covered fraction, optionally padded to a fixed comparison budget."""
 
-    if not episode.steps:
+    if budget is not None:
+        values = fixed_budget_coverage_curve(episode, budget)
+    else:
+        values = tuple(step.coverage_fraction for step in episode.steps)
+    if not values:
         return 0.0
-    return mean(step.coverage_fraction for step in episode.steps)
+    return mean(values)
+
+
+def fixed_budget_coverage_curve(episode: EpisodeMetric, budget: int) -> tuple[float, ...]:
+    """Pad terminal coverage so every comparison curve spans the same decision budget."""
+
+    if budget <= 0:
+        raise ValueError("budget must be positive")
+    values = [step.coverage_fraction for step in episode.steps]
+    last = values[-1] if values else 0.0
+    return tuple((values + [last] * budget)[:budget])

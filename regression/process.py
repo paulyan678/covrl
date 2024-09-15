@@ -83,10 +83,12 @@ class ProcessExecutor:
 
 
 def read_log(path: Path, max_bytes: int = 8 * 1024 * 1024) -> str:
-    """Read a bounded log tail so pathological simulator output cannot exhaust memory."""
+    """Read a bounded log tail for display; failure detection streams the full file."""
 
     try:
         with path.open("rb") as handle:
+            if max_bytes <= 0:
+                raise ValueError("max_bytes must be positive")
             handle.seek(0, os.SEEK_END)
             size = handle.tell()
             handle.seek(max(0, size - max_bytes), os.SEEK_SET)

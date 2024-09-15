@@ -76,7 +76,8 @@ module toy_codec (
     end else if (req_cmd == CODEC_CMD_DATA) begin
       if (!configured)
         evaluated_status = CODEC_STATUS_NOT_CONFIGURED;
-      else if (!(req_payload_bytes inside {3'd1, 3'd2, 3'd3, 3'd4}))
+      else if (!(req_payload_bytes == 3'd1 || req_payload_bytes == 3'd2 ||
+                 req_payload_bytes == 3'd3 || req_payload_bytes == 3'd4))
         evaluated_status = CODEC_STATUS_BAD_INPUT;
       else begin
         evaluated_status = CODEC_STATUS_OK;
@@ -86,9 +87,9 @@ module toy_codec (
       if (req_control == CODEC_CTRL_PING) begin
         evaluated_status = CODEC_STATUS_OK;
         evaluated_data = 32'hc0de_c0de;
-      end else if (!(req_control inside {
-        CODEC_CTRL_START, CODEC_CTRL_FLUSH, CODEC_CTRL_STOP
-      })) begin
+      end else if (!(req_control == CODEC_CTRL_START ||
+                     req_control == CODEC_CTRL_FLUSH ||
+                     req_control == CODEC_CTRL_STOP)) begin
         evaluated_status = CODEC_STATUS_BAD_CONTROL;
       end else if (!configured) begin
         evaluated_status = CODEC_STATUS_NOT_CONFIGURED;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from regression.adapters.base import SimulatorAdapter
@@ -37,6 +38,23 @@ class QuestaAdapter(SimulatorAdapter):
     def _coverage_options(self) -> tuple[str, ...]:
         return self.config.coverage_options or ("+cover=bcesft",)
 
+    @staticmethod
+    def _uvm_library() -> str:
+        library = os.environ.get("QUESTA_UVM_LIB", "uvm").strip()
+        if not library:
+            raise ValueError("QUESTA_UVM_LIB must not be empty")
+        return library
+
+    @staticmethod
+    def _uvm_include_options() -> tuple[str, ...]:
+        direct = os.environ.get("QUESTA_UVM_SRC")
+        if direct:
+            return ("+incdir+" + str(Path(direct).expanduser()),)
+        uvm_home = os.environ.get("UVM_HOME")
+        if uvm_home:
+            return ("+incdir+" + str(Path(uvm_home).expanduser() / "src"),)
+        return ()
+
     def compile_commands(self, build_dir: Path) -> tuple[Command, ...]:
         work = self._work(build_dir)
         create = self.command(
@@ -51,9 +69,10 @@ class QuestaAdapter(SimulatorAdapter):
                 "-sv",
                 "-mfcu",
                 "-L",
-                "uvm",
+                self._uvm_library(),
                 "-work",
                 str(work),
+                *self._uvm_include_options(),
                 "-f",
                 str(self.config.source_manifest),
                 *self.config.compile_options,
@@ -70,7 +89,7 @@ class QuestaAdapter(SimulatorAdapter):
             "-work",
             str(self._work(build_dir)),
             "-L",
-            "uvm",
+            self._uvm_library(),
             self.config.top,
             "-o",
             self._optimized_top(build_dir),
@@ -105,12 +124,13 @@ class QuestaAdapter(SimulatorAdapter):
             "-lib",
             str(self._work(build_dir)),
             "-L",
-            "uvm",
+            self._uvm_library(),
             "-sv_seed",
             str(seed),
             self._optimized_top(build_dir),
             f"+UVM_TESTNAME={test.uvm_test}",
             f"+UVM_VERBOSITY={test.uvm_verbosity}",
+            f"+COVERAGE={int(test.coverage)}",
             *test.uvm_args,
             "-do",
             "; ".join(actions),

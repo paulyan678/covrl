@@ -13,6 +13,7 @@ class codec_reset_sequence extends codec_base_sequence;
     send_data(32'haaaa_5555, 4, CODEC_FRAME_I);
 
     interrupted = codec_seq_item::type_id::create("interrupted_data");
+    seed_random_item(interrupted);
     start_item(interrupted);
     if (!interrupted.randomize() with {
       cmd == CODEC_CMD_DATA;

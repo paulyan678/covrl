@@ -1,10 +1,39 @@
 class codec_base_sequence extends uvm_sequence #(codec_seq_item);
   codec_env_cfg cfg;
+  bit deterministic_seed_enabled;
+  int unsigned deterministic_seed_state;
   `uvm_object_utils(codec_base_sequence)
   `uvm_declare_p_sequencer(codec_sequencer)
 
   function new(string name = "codec_base_sequence");
     super.new(name);
+  endfunction
+
+  function void set_deterministic_seed(int unsigned seed);
+    deterministic_seed_enabled = 1;
+    deterministic_seed_state = seed;
+    srandom(seed);
+  endfunction
+
+  function void advance_deterministic_seed();
+    deterministic_seed_state =
+      deterministic_seed_state * 32'd1664525 + 32'd1013904223;
+  endfunction
+
+  function void seed_random_item(codec_seq_item item);
+    if (deterministic_seed_enabled) begin
+      item.srandom(deterministic_seed_state);
+      advance_deterministic_seed();
+    end
+  endfunction
+
+  function int unsigned choose_index(int unsigned maximum_index);
+    int unsigned choice;
+    if (!deterministic_seed_enabled)
+      return $urandom_range(maximum_index);
+    choice = deterministic_seed_state % (maximum_index + 1);
+    advance_deterministic_seed();
+    return choice;
   endfunction
 
   task pre_body();

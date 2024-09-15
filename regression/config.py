@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -19,6 +20,15 @@ _EXPECTED_RESULTS = {"pass", "fail"}
 _FLOWS = {"uvm", "smoke"}
 _SEED_POLICIES = {"fixed", "derived", "random"}
 _MOCK_BEHAVIORS = {"pass", "fail", "assertion", "uvm_error", "infra", "timeout"}
+_RESERVED_RUN_CONTROLS = {
+    "+COVERAGE",
+    "+UVM_TESTNAME",
+    "+UVM_VERBOSITY",
+    "+WAVES",
+    "+WAVEFORM_FILE",
+    "+ntb_random_seed",
+    "-sv_seed",
+}
 
 
 @dataclass(frozen=True)
@@ -133,17 +143,22 @@ def _integer(value: Any, location: str, minimum: int = 0) -> int:
 def _positive_number(value: Any, location: str, allow_zero: bool = False) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ManifestError(f"{location} must be a number")
-    result = float(value)
+    try:
+        result = float(value)
+    except (OverflowError, ValueError) as error:
+        raise ManifestError(f"{location} must be finite") from error
+    if not math.isfinite(result):
+        raise ManifestError(f"{location} must be finite")
     if result < 0.0 or (not allow_zero and result == 0.0):
         operator = ">=" if allow_zero else ">"
         raise ManifestError(f"{location} must be {operator} 0")
     return result
 
 
-def _string_list(value: Any, location: str) -> tuple[str, ...]:
+def _string_list(value: Any, location: str, *, unique: bool = True) -> tuple[str, ...]:
     items = _array(value, location)
     result = tuple(_string(item, f"{location}[{index}]") for index, item in enumerate(items))
-    if len(set(result)) != len(result):
+    if unique and len(set(result)) != len(result):
         raise ManifestError(f"{location} contains duplicate values")
     return result
 
@@ -179,7 +194,18 @@ def _seed(value: Any, location: str) -> SeedSpec:
 
 
 def _options(value: Any, location: str) -> tuple[str, ...]:
-    return _string_list(value, location)
+    return _string_list(value, location, unique=False)
+
+
+def _user_run_options(value: Any, location: str) -> tuple[str, ...]:
+    options = _options(value, location)
+    for option in options:
+        name = option.split("=", maxsplit=1)[0]
+        if name in _RESERVED_RUN_CONTROLS:
+            raise ManifestError(
+                f"{location} contains reserved generated control {name!r}; use its manifest field"
+            )
+    return options
 
 
 def _parse_defaults(raw: Any) -> Defaults:
@@ -247,7 +273,9 @@ def _parse_simulators(raw: Any, project_root: Path) -> dict[str, SimulatorConfig
             elaborate_options=_options(
                 config.get("elaborate_options", []), f"simulators.{name}.elaborate_options"
             ),
-            run_options=_options(config.get("run_options", []), f"simulators.{name}.run_options"),
+            run_options=_user_run_options(
+                config.get("run_options", []), f"simulators.{name}.run_options"
+            ),
             coverage_options=_options(
                 config.get("coverage_options", []), f"simulators.{name}.coverage_options"
             ),
@@ -294,7 +322,7 @@ def _parse_test(raw: Any, index: int, defaults: Defaults) -> TestSpec:
         data.get("simulator_options", {}), f"{location}.simulator_options"
     )
     simulator_options = {
-        _name(key, f"{location}.simulator_options key"): _options(
+        _name(key, f"{location}.simulator_options key"): _user_run_options(
             value, f"{location}.simulator_options.{key}"
         )
         for key, value in simulator_options_data.items()
@@ -317,7 +345,7 @@ def _parse_test(raw: Any, index: int, defaults: Defaults) -> TestSpec:
         uvm_verbosity=_string(
             data.get("uvm_verbosity", defaults.uvm_verbosity), f"{location}.uvm_verbosity"
         ),
-        uvm_args=_options(data.get("uvm_args", []), f"{location}.uvm_args"),
+        uvm_args=_user_run_options(data.get("uvm_args", []), f"{location}.uvm_args"),
         seed=_seed(
             data.get(
                 "seed",

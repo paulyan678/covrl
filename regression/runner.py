@@ -10,16 +10,17 @@ from pathlib import Path
 
 from regression.adapters import create_adapter
 from regression.config import Manifest, TestSpec
-from regression.detection import classify_outcome, collect_artifacts, detect_failures
+from regression.detection import classify_outcome, collect_artifacts, detect_failures_file
 from regression.models import (
     Command,
+    Detection,
     Outcome,
     Provenance,
     RunSummary,
     StageResult,
     TestResult,
 )
-from regression.process import ProcessExecutor, read_log
+from regression.process import ProcessExecutor
 from regression.seeds import resolve_seed
 
 Console = Callable[[str], None]
@@ -254,12 +255,12 @@ class RegressionRunner:
             )
         self._remove_stale_artifact(plan.coverage_path, test_dir)
         self._remove_stale_artifact(plan.waveform_path, test_dir)
-        detection = detect_failures("")
+        detection = Detection()
         coverage_path = None
         waveform_path = None
         try:
             process = self.executor.run(plan.command, test.timeout_seconds)
-            detection = detect_failures(read_log(process.log_path))
+            detection = detect_failures_file(process.log_path)
             outcome, reasons = classify_outcome(
                 test.expected_result,
                 process.returncode,

@@ -10,6 +10,7 @@ class codec_backpressure_sequence extends codec_base_sequence;
     send_config(CODEC_PROFILE_HIGH, 3840, 2160, 12, 40);
     repeat (cfg.transaction_count) begin
       item = codec_seq_item::type_id::create("backpressure_item");
+      seed_random_item(item);
       start_item(item);
       if (!item.randomize() with {
         cmd == CODEC_CMD_DATA;

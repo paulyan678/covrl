@@ -3,15 +3,19 @@
 `uvm_analysis_imp_decl(_reset)
 
 class codec_scoreboard extends uvm_scoreboard;
+  codec_env_cfg cfg;
   uvm_analysis_imp_expected #(codec_seq_item, codec_scoreboard) expected_imp;
   uvm_analysis_imp_actual #(codec_seq_item, codec_scoreboard) actual_imp;
   uvm_analysis_imp_reset #(codec_seq_item, codec_scoreboard) reset_imp;
 
   codec_seq_item expected_q[$];
-  int unsigned matches;
+  longint unsigned expected_cycle_q[$];
+  longint unsigned cycle_count;
+  int unsigned match_count;
   int unsigned mismatches;
   int unsigned unexpected;
   int unsigned resets;
+  int unsigned timeouts;
 
   `uvm_component_utils(codec_scoreboard)
 
@@ -22,10 +26,42 @@ class codec_scoreboard extends uvm_scoreboard;
     reset_imp = new("reset_imp", this);
   endfunction
 
+  function void build_phase(uvm_phase phase);
+    super.build_phase(phase);
+    if (!uvm_config_db #(codec_env_cfg)::get(this, "", "cfg", cfg))
+      `uvm_fatal("SB/CFG", "codec_env_cfg was not provided to scoreboard")
+  endfunction
+
+  task run_phase(uvm_phase phase);
+    codec_seq_item timed_out_item;
+    cycle_count = 0;
+    forever begin
+      @(cfg.vif.mon_cb);
+      cycle_count++;
+      if (!cfg.vif.mon_cb.reset_n)
+        continue;
+      // The monitor owns the response handshake at this edge. Do not let
+      // scheduler ordering expire it before write_actual consumes it.
+      if (cfg.vif.mon_cb.rsp_valid && cfg.vif.mon_cb.rsp_ready)
+        continue;
+      while (expected_q.size() > 0 && expected_cycle_q.size() > 0 &&
+             cycle_count - expected_cycle_q[0] > cfg.scoreboard_timeout_cycles) begin
+        timed_out_item = expected_q.pop_front();
+        void'(expected_cycle_q.pop_front());
+        mismatches++;
+        timeouts++;
+        `uvm_error("SB/TIMEOUT", $sformatf(
+          "expected response exceeded %0d cycles: %s",
+          cfg.scoreboard_timeout_cycles, timed_out_item.convert2string()))
+      end
+    end
+  endtask
+
   function void write_expected(codec_seq_item item);
     codec_seq_item copy;
     $cast(copy, item.clone());
     expected_q.push_back(copy);
+    expected_cycle_q.push_back(item.observed_cycle);
   endfunction
 
   function void write_actual(codec_seq_item actual);
@@ -40,6 +76,9 @@ class codec_scoreboard extends uvm_scoreboard;
     end
 
     expected = expected_q.pop_front();
+    if (expected_cycle_q.size() == 0)
+      `uvm_fatal("SB/AGE", "expected response age queue is inconsistent")
+    void'(expected_cycle_q.pop_front());
     matched = 1;
     if (actual.sequence_id !== expected.sequence_id) begin
       matched = 0;
@@ -73,7 +112,7 @@ class codec_scoreboard extends uvm_scoreboard;
     end
 
     if (matched) begin
-      matches++;
+      match_count++;
       `uvm_info("SB/MATCH", actual.convert2string(), UVM_HIGH)
     end else begin
       mismatches++;
@@ -84,6 +123,7 @@ class codec_scoreboard extends uvm_scoreboard;
     int unsigned discarded;
     discarded = expected_q.size();
     expected_q.delete();
+    expected_cycle_q.delete();
     resets++;
     if (discarded > 0)
       `uvm_info("SB/RESET", $sformatf(
@@ -102,8 +142,8 @@ class codec_scoreboard extends uvm_scoreboard;
   function void report_phase(uvm_phase phase);
     super.report_phase(phase);
     `uvm_info("SB/SUMMARY", $sformatf(
-      "matches=%0d mismatches=%0d unexpected=%0d resets=%0d",
-      matches, mismatches, unexpected, resets), UVM_LOW)
+      "matches=%0d mismatches=%0d unexpected=%0d resets=%0d timeouts=%0d",
+      match_count, mismatches, unexpected, resets, timeouts), UVM_LOW)
   endfunction
 
 endclass

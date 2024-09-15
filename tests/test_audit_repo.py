@@ -30,7 +30,7 @@ def run_git(root: Path, *args: str, timestamp: str | None = None) -> None:
     )
 
 
-def create_two_commit_repository(root: Path) -> None:
+def create_three_commit_repository(root: Path) -> None:
     run_git(root, "init", "-q")
     run_git(root, "config", "user.name", "Audit Test")
     run_git(root, "config", "user.email", "audit@example.invalid")
@@ -71,19 +71,30 @@ __pycache__/
         "docs: add test notes",
         timestamp="2023-09-22T11:00:00+08:00",
     )
+    title, body = (root / "README.md").read_text(encoding="utf-8").split("\n", maxsplit=1)
+    (root / "README.md").write_text(title + "\n\n" + body, encoding="utf-8")
+    run_git(root, "add", "README.md")
+    run_git(
+        root,
+        "commit",
+        "-q",
+        "-m",
+        "docs: format test readme",
+        timestamp="2023-09-23T12:00:00+08:00",
+    )
 
 
 class RepositoryAuditTests(unittest.TestCase):
     def test_complete_fixture_passes_history_and_hygiene_checks(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            create_two_commit_repository(root)
+            create_three_commit_repository(root)
             checks = audit_repository(
                 root,
                 AuditConfig(
-                    expected_commits=2,
+                    expected_commits=3,
                     expected_first_date=date(2023, 9, 21),
-                    expected_final_date=date(2023, 9, 22),
+                    expected_final_date=date(2023, 9, 23),
                 ),
             )
         self.assertTrue(all(check.passed for check in checks))
@@ -91,18 +102,72 @@ class RepositoryAuditTests(unittest.TestCase):
     def test_dirty_working_tree_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            create_two_commit_repository(root)
+            create_three_commit_repository(root)
             (root / "untracked.txt").write_text("pending\n", encoding="utf-8")
             checks = audit_repository(
                 root,
                 AuditConfig(
-                    expected_commits=2,
+                    expected_commits=3,
                     expected_first_date=date(2023, 9, 21),
-                    expected_final_date=date(2023, 9, 22),
+                    expected_final_date=date(2023, 9, 23),
                 ),
             )
         by_name = {check.name: check for check in checks}
         self.assertFalse(by_name["working tree"].passed)
+
+    def test_nonconventional_commit_subject_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            create_three_commit_repository(root)
+            run_git(
+                root,
+                "commit",
+                "--amend",
+                "-q",
+                "-m",
+                "invalid subject",
+                timestamp="2023-09-23T12:00:00+08:00",
+            )
+            checks = audit_repository(
+                root,
+                AuditConfig(
+                    expected_commits=3,
+                    expected_first_date=date(2023, 9, 21),
+                    expected_final_date=date(2023, 9, 23),
+                ),
+            )
+        by_name = {check.name: check for check in checks}
+        self.assertFalse(by_name["commit subjects"].passed)
+
+    def test_extra_commit_reachable_only_from_another_ref_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            create_three_commit_repository(root)
+            tree = subprocess.run(
+                ("git", "rev-parse", "HEAD^{tree}"),
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+            commit = subprocess.run(
+                ("git", "commit-tree", tree, "-m", "chore: hidden history"),
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+            run_git(root, "tag", "extra-history", commit)
+            checks = audit_repository(
+                root,
+                AuditConfig(
+                    expected_commits=3,
+                    expected_first_date=date(2023, 9, 21),
+                    expected_final_date=date(2023, 9, 23),
+                ),
+            )
+        by_name = {check.name: check for check in checks}
+        self.assertFalse(by_name["all-reference commit count"].passed)
 
     def test_high_confidence_key_shape_is_detected(self) -> None:
         sample = "AK" + "IA" + ("A" * 16)

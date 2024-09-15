@@ -4,13 +4,90 @@ from __future__ import annotations
 
 import html
 import json
+import math
 from collections.abc import Iterable
 from pathlib import Path
 
-from regression.models import RunSummary, TestResult
+from regression.models import Outcome, Provenance, RunSummary, TestResult
+
+
+def _validate_loaded_summary(summary: RunSummary) -> None:
+    if not summary.selected_tests:
+        raise ValueError("selected_tests must not be empty")
+    if len(set(summary.selected_tests)) != len(summary.selected_tests):
+        raise ValueError("selected_tests contains duplicate names")
+    selected = set(summary.selected_tests)
+    attempts: set[tuple[str, int]] = set()
+    by_test: dict[str, list[int]] = {name: [] for name in summary.selected_tests}
+    for result in summary.results:
+        if result.test_name not in selected:
+            raise ValueError(f"result references unselected test {result.test_name!r}")
+        key = (result.test_name, result.attempt)
+        if key in attempts:
+            raise ValueError(f"duplicate result attempt {result.test_name!r} #{result.attempt}")
+        attempts.add(key)
+        by_test[result.test_name].append(result.attempt)
+        if result.attempt < 1:
+            raise ValueError("result attempts must be positive")
+        if result.simulator != summary.simulator:
+            raise ValueError(f"result simulator differs for {result.test_name!r}")
+        if result.provenance is not summary.provenance:
+            raise ValueError(f"result provenance differs for {result.test_name!r}")
+        if not 1 <= result.seed <= 2_147_483_646:
+            raise ValueError(f"result seed is invalid for {result.test_name!r}")
+        if result.expected_result not in {"pass", "fail"}:
+            raise ValueError(f"expected_result is invalid for {result.test_name!r}")
+        if summary.provenance is Provenance.DRY_RUN:
+            if result.outcome not in {Outcome.DRY_RUN, Outcome.UNSUPPORTED}:
+                raise ValueError(
+                    f"dry-run provenance has executed outcome for {result.test_name!r}"
+                )
+        elif result.outcome is Outcome.DRY_RUN:
+            raise ValueError(f"executed provenance has dry-run outcome for {result.test_name!r}")
+        impossible_for_expectation = (
+            result.expected_result == "pass"
+            and result.outcome in {Outcome.EXPECTED_FAILURE, Outcome.UNEXPECTED_PASS}
+        ) or (
+            result.expected_result == "fail" and result.outcome in {Outcome.PASSED, Outcome.FAILED}
+        )
+        if impossible_for_expectation:
+            raise ValueError(
+                f"outcome is inconsistent with expected_result for {result.test_name!r}"
+            )
+        if result.outcome in {Outcome.PASSED, Outcome.EXPECTED_FAILURE}:
+            if (
+                result.command is None
+                or result.returncode is None
+                or not result.started_at
+                or result.log_path is None
+            ):
+                raise ValueError(
+                    f"successful result lacks execution evidence for {result.test_name!r}"
+                )
+        counters = (result.assertion_failures, result.uvm_errors, result.uvm_fatals)
+        if any(value < 0 for value in counters):
+            raise ValueError(f"failure counters are invalid for {result.test_name!r}")
+        if result.outcome is Outcome.PASSED and (
+            result.returncode != 0 or any(counters) or result.failure_reasons
+        ):
+            raise ValueError(f"passing result contains failure evidence for {result.test_name!r}")
+        if result.outcome is Outcome.EXPECTED_FAILURE and not result.failure_reasons:
+            raise ValueError(f"expected failure lacks failure evidence for {result.test_name!r}")
+        if not math.isfinite(result.duration_seconds) or result.duration_seconds < 0:
+            raise ValueError(f"duration is invalid for {result.test_name!r}")
+    missing = [name for name, values in by_test.items() if not values]
+    if missing:
+        raise ValueError("missing result for selected test(s): " + ", ".join(missing))
+    for name, values in by_test.items():
+        ordered = sorted(values)
+        if ordered != list(range(1, max(ordered) + 1)):
+            raise ValueError(f"result attempts are not contiguous for {name!r}")
+    if not summary.has_complete_results:
+        raise ValueError("summary does not contain exactly one final result per selected test")
 
 
 def write_json(summary: RunSummary, path: Path) -> Path:
+    _validate_loaded_summary(summary)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(summary.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -33,11 +110,12 @@ def load_json(path: Path) -> RunSummary:
         raise ValueError(
             f"unsupported result schema_version {summary.schema_version} in {path}; expected 1"
         )
+    _validate_loaded_summary(summary)
     return summary
 
 
 def _md_cell(value: object) -> str:
-    return str(value).replace("|", "\\|").replace("\n", " ")
+    return html.escape(str(value), quote=False).replace("|", "\\|").replace("\n", " ")
 
 
 def _reason(result: TestResult) -> str:
@@ -124,6 +202,7 @@ def markdown_text(summary: RunSummary) -> str:
 
 
 def write_markdown(summary: RunSummary, path: Path) -> Path:
+    _validate_loaded_summary(summary)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(markdown_text(summary), encoding="utf-8")
     return path
@@ -208,6 +287,7 @@ code {{ background: #eef2f7; padding: .1rem .25rem; }}
 
 
 def write_html(summary: RunSummary, path: Path) -> Path:
+    _validate_loaded_summary(summary)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(html_text(summary), encoding="utf-8")
     return path

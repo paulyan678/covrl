@@ -27,7 +27,9 @@
       "run_executable_env": "VSIM",
       "run_executable_default": "vsim",
       "coverage_merge_executable_env": "VCOVER",
-      "coverage_merge_executable_default": "vcover"
+      "coverage_merge_executable_default": "vcover",
+      "uvm_source_env": "QUESTA_UVM_SRC",
+      "uvm_library_env": "QUESTA_UVM_LIB"
     },
     "iverilog": {
       "compile_executable_env": "IVERILOG",

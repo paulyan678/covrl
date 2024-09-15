@@ -3,18 +3,30 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 from regression.models import Detection, Outcome
 
 _ASSERTION = re.compile(
-    r"(?:assertion\s+(?:failure|failed|error|violation)|\bSVA\b.*\b(?:fail|error))",
+    r"(?:\bassertions?\b[^\n]*\b(?:fail(?:ed|s|ures?)?|errors?|violations?)\b|"
+    r"\bSVA\b[^\n]*\b(?:fail(?:ed|s|ures?)?|errors?|violations?)\b)",
+    re.IGNORECASE,
+)
+_ZERO_ASSERTION_SUMMARY = re.compile(
+    r"\b(?:assertions?|SVA)(?:\s+(?:errors?|fail(?:ed|s|ures?)?|violations?))?"
+    r"\s*[:=]\s*0\b",
+    re.IGNORECASE,
+)
+_ASSERTION_SUMMARY = re.compile(
+    r"\b(?:assertions?|SVA)\s+(?:errors?|fail(?:ed|s|ures?)?|violations?)"
+    r"\s*[:=]\s*(\d+)\b",
     re.IGNORECASE,
 )
 _UVM_ERROR_SUMMARY = re.compile(r"\bUVM_ERROR\s*:\s*(\d+)\b")
 _UVM_FATAL_SUMMARY = re.compile(r"\bUVM_FATAL\s*:\s*(\d+)\b")
-_UVM_ERROR_EVENT = re.compile(r"\bUVM_ERROR(?:\s+@|\s*\[)")
-_UVM_FATAL_EVENT = re.compile(r"\bUVM_FATAL(?:\s+@|\s*\[)")
+_UVM_ERROR_EVENT = re.compile(r"\bUVM_ERROR(?:\s+@|\s*\[|\s+\S+\(\d+\)\s+@)")
+_UVM_FATAL_EVENT = re.compile(r"\bUVM_FATAL(?:\s+@|\s*\[|\s+\S+\(\d+\)\s+@)")
 _FAILURE_MARKER = re.compile(r"\[REGRESSION\]\s+FAILURE\s*:\s*(.*)", re.IGNORECASE)
 _INFRASTRUCTURE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("explicit infrastructure failure", re.compile(r"REGRESSION_INFRA_FAILURE", re.I)),
@@ -25,30 +37,56 @@ _INFRASTRUCTURE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
-def _summary_or_events(
-    text: str, summary_pattern: re.Pattern[str], event_pattern: re.Pattern[str]
-) -> int:
-    summary_values = [int(value) for value in summary_pattern.findall(text)]
-    events = sum(1 for line in text.splitlines() if event_pattern.search(line))
-    return max((*summary_values, events), default=0)
+def _detect_lines(lines: Iterable[str]) -> Detection:
+    assertion_lines: set[str] = set()
+    assertion_summary = 0
+    uvm_error_summary = 0
+    uvm_fatal_summary = 0
+    uvm_error_events = 0
+    uvm_fatal_events = 0
+    infrastructure_labels: set[str] = set()
+    markers: list[str] = []
+    for line in lines:
+        if _ASSERTION.search(line) and not _ZERO_ASSERTION_SUMMARY.search(line):
+            assertion_lines.add(line.strip())
+        assertion_summary = max(
+            [assertion_summary, *(int(value) for value in _ASSERTION_SUMMARY.findall(line))]
+        )
+        uvm_error_summary = max(
+            [uvm_error_summary, *(int(value) for value in _UVM_ERROR_SUMMARY.findall(line))]
+        )
+        uvm_fatal_summary = max(
+            [uvm_fatal_summary, *(int(value) for value in _UVM_FATAL_SUMMARY.findall(line))]
+        )
+        uvm_error_events += int(bool(_UVM_ERROR_EVENT.search(line)))
+        uvm_fatal_events += int(bool(_UVM_FATAL_EVENT.search(line)))
+        for label, pattern in _INFRASTRUCTURE_PATTERNS:
+            if pattern.search(line):
+                infrastructure_labels.add(label)
+        markers.extend(
+            match.group(1).strip() or "explicit failure marker"
+            for match in _FAILURE_MARKER.finditer(line)
+        )
+    return Detection(
+        assertion_failures=max(assertion_summary, len(assertion_lines)),
+        uvm_errors=max(uvm_error_summary, uvm_error_events),
+        uvm_fatals=max(uvm_fatal_summary, uvm_fatal_events),
+        infrastructure_failures=tuple(
+            label for label, _ in _INFRASTRUCTURE_PATTERNS if label in infrastructure_labels
+        ),
+        failure_markers=tuple(markers),
+    )
 
 
 def detect_failures(text: str) -> Detection:
-    assertion_lines = {line.strip() for line in text.splitlines() if _ASSERTION.search(line)}
-    infrastructure = tuple(
-        label for label, pattern in _INFRASTRUCTURE_PATTERNS if pattern.search(text)
-    )
-    markers = tuple(
-        match.group(1).strip() or "explicit failure marker"
-        for match in _FAILURE_MARKER.finditer(text)
-    )
-    return Detection(
-        assertion_failures=len(assertion_lines),
-        uvm_errors=_summary_or_events(text, _UVM_ERROR_SUMMARY, _UVM_ERROR_EVENT),
-        uvm_fatals=_summary_or_events(text, _UVM_FATAL_SUMMARY, _UVM_FATAL_EVENT),
-        infrastructure_failures=infrastructure,
-        failure_markers=markers,
-    )
+    return _detect_lines(text.splitlines())
+
+
+def detect_failures_file(path: Path) -> Detection:
+    """Parse an arbitrarily large simulator log without loading it into memory."""
+
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        return _detect_lines(handle)
 
 
 def classify_outcome(

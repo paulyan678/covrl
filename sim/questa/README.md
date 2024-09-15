@@ -17,11 +17,15 @@ export VLOG='vlog'
 export VOPT='vopt'
 export VSIM='vsim'
 export VCOVER='vcover'
+export QUESTA_UVM_SRC="$UVM_HOME/src"
+export QUESTA_UVM_LIB='uvm'
 ```
 
 Each value may be a quoted wrapper command with fixed arguments. Configure the Siemens license and
-any site setup in the invoking shell. Compile, optimize, run, and coverage flags are configured in
-`sim/manifests/regression.json`.
+any site setup in the invoking shell. `QUESTA_UVM_SRC` is the directory containing
+`uvm_macros.svh`; if it is unset, the adapter uses `$UVM_HOME/src` when `UVM_HOME` is available.
+`QUESTA_UVM_LIB` selects the precompiled library name and defaults to `uvm`. Compile, optimize, run,
+and coverage flags are configured in `sim/manifests/regression.json`.
 
 Inspect commands without checking tools or launching Questa:
 

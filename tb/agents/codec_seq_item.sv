@@ -27,6 +27,7 @@ class codec_seq_item extends uvm_sequence_item;
   codec_status_e      status;
   logic [31:0]        response_data;
   logic [15:0]        sequence_id;
+  longint unsigned    observed_cycle;
   int unsigned        observed_latency;
   bit                 configured_state;
 
@@ -92,6 +93,7 @@ class codec_seq_item extends uvm_sequence_item;
     `uvm_field_enum(codec_status_e, status, UVM_DEFAULT)
     `uvm_field_int(response_data, UVM_HEX)
     `uvm_field_int(sequence_id, UVM_DEFAULT)
+    `uvm_field_int(observed_cycle, UVM_DEFAULT)
     `uvm_field_int(observed_latency, UVM_DEFAULT)
     `uvm_field_int(configured_state, UVM_DEFAULT)
   `uvm_object_utils_end

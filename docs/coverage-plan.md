@@ -67,6 +67,9 @@ The following holes are expected and must be explained in any closure report:
 - The supplied sequences bound DUT latency to 15 cycles and response stalls to
   12 cycles. Timeout-risk latency bins require a deliberately extended stress
   sequence or a different DUT adapter.
+- `CODEC_STATUS_TIMEOUT` is reserved for a future timeout-reporting DUT adapter.
+  The toy DUT is interrupted by the driver/SVA timeout path instead of emitting
+  a normal response with this status, so its status bin is unreachable here.
 - The behavioral DUT does not model compressed bitstream syntax, chroma
   subsampling, tiles/slices, reference-picture lists, entropy coding, or
   standard-specific level constraints. No bins for those concepts are claimed.

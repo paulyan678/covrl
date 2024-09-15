@@ -182,6 +182,47 @@ class CliTests(unittest.TestCase):
             self.assertTrue((root / "regenerated" / "report.md").exists())
             self.assertTrue((root / "regenerated" / "report.html").exists())
 
+    def test_real_merge_rejects_dry_run_results_even_if_stale_database_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan_output = root / "vcs-plan"
+            with contextlib.redirect_stdout(io.StringIO()):
+                plan_status = main(
+                    [
+                        "run",
+                        "codec_normal_test",
+                        "--manifest",
+                        str(MANIFEST),
+                        "--simulator",
+                        "vcs",
+                        "--output",
+                        str(plan_output),
+                        "--dry-run",
+                    ]
+                )
+            summary = load_json(plan_output / "results.json")
+            coverage_path = summary.final_results[0].coverage_path
+            assert coverage_path is not None
+            coverage_path.mkdir(parents=True)
+            error = io.StringIO()
+            with contextlib.redirect_stderr(error), contextlib.redirect_stdout(io.StringIO()):
+                merge_status = main(
+                    [
+                        "merge",
+                        "--manifest",
+                        str(MANIFEST),
+                        "--simulator",
+                        "vcs",
+                        "--results",
+                        str(plan_output / "results.json"),
+                        "--output",
+                        str(root / "coverage"),
+                    ]
+                )
+        self.assertEqual(plan_status, 0)
+        self.assertEqual(merge_status, 2)
+        self.assertIn("dry-run results", error.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,7 +6,7 @@ class codec_reset_recovery_test extends codec_base_test;
     super.new(name, parent);
   endfunction
 
-  function uvm_sequence_base create_main_sequence();
+  function codec_base_sequence create_main_sequence();
     return codec_reset_sequence::type_id::create("reset_recovery_sequence");
   endfunction
 
