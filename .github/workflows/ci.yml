@@ -21,7 +21,6 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y iverilog
       - run: python -m ruff check regression rl scripts tests
       - run: python -m ruff format --check regression rl scripts tests
-      - run: python -m mypy regression rl scripts tests
       - run: python -m unittest discover -s tests -v
       - run: python scripts/regress.py full --simulator mock --jobs 3 --seed-base 2024 --output outputs/ci/mock
       - run: python scripts/regress.py suite portable --simulator iverilog --seed-base 2024 --output outputs/ci/hdl --reruns 0
@@ -44,4 +43,5 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: python -m pip install -c constraints.txt -e '.[test,rl]'
+      - run: python -m mypy regression rl scripts tests
       - run: python -m unittest tests.test_rl_training_config tests.test_checkpoint -v
