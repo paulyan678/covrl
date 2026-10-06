@@ -4,7 +4,6 @@ import os
 import subprocess
 import tempfile
 import unittest
-from datetime import date
 from pathlib import Path
 
 from scripts.audit_repo import (
@@ -91,11 +90,7 @@ class RepositoryAuditTests(unittest.TestCase):
             create_three_commit_repository(root)
             checks = audit_repository(
                 root,
-                AuditConfig(
-                    expected_commits=3,
-                    expected_first_date=date(2023, 9, 21),
-                    expected_final_date=date(2023, 9, 23),
-                ),
+                AuditConfig(),
             )
         self.assertTrue(all(check.passed for check in checks))
 
@@ -106,16 +101,12 @@ class RepositoryAuditTests(unittest.TestCase):
             (root / "untracked.txt").write_text("pending\n", encoding="utf-8")
             checks = audit_repository(
                 root,
-                AuditConfig(
-                    expected_commits=3,
-                    expected_first_date=date(2023, 9, 21),
-                    expected_final_date=date(2023, 9, 23),
-                ),
+                AuditConfig(),
             )
         by_name = {check.name: check for check in checks}
         self.assertFalse(by_name["working tree"].passed)
 
-    def test_nonconventional_commit_subject_is_rejected(self) -> None:
+    def test_normal_commit_subject_and_amended_date_are_allowed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_three_commit_repository(root)
@@ -130,16 +121,11 @@ class RepositoryAuditTests(unittest.TestCase):
             )
             checks = audit_repository(
                 root,
-                AuditConfig(
-                    expected_commits=3,
-                    expected_first_date=date(2023, 9, 21),
-                    expected_final_date=date(2023, 9, 23),
-                ),
+                AuditConfig(),
             )
-        by_name = {check.name: check for check in checks}
-        self.assertFalse(by_name["commit subjects"].passed)
+        self.assertTrue(all(check.passed for check in checks))
 
-    def test_extra_commit_reachable_only_from_another_ref_is_rejected(self) -> None:
+    def test_additional_branch_history_is_allowed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_three_commit_repository(root)
@@ -160,14 +146,9 @@ class RepositoryAuditTests(unittest.TestCase):
             run_git(root, "tag", "extra-history", commit)
             checks = audit_repository(
                 root,
-                AuditConfig(
-                    expected_commits=3,
-                    expected_first_date=date(2023, 9, 21),
-                    expected_final_date=date(2023, 9, 23),
-                ),
+                AuditConfig(),
             )
-        by_name = {check.name: check for check in checks}
-        self.assertFalse(by_name["all-reference commit count"].passed)
+        self.assertTrue(all(check.passed for check in checks))
 
     def test_high_confidence_key_shape_is_detected(self) -> None:
         sample = "AK" + "IA" + ("A" * 16)

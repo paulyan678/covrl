@@ -1,0 +1,10 @@
+# Tested direct dependencies on Python 3.12. Transitive and platform dependencies
+# remain resolver-managed; this is a constraints snapshot, not a full lockfile.
+numpy==2.5.3
+pytest==9.1.1
+ruff==0.16.10
+mypy==2.4.0
+gymnasium==1.4.0
+stable-baselines3==2.9.0
+sb3-contrib==2.9.0
+torch==2.14.1
