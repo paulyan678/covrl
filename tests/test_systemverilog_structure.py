@@ -101,6 +101,8 @@ class SystemVerilogStructureTests(unittest.TestCase):
         scoreboard = (ROOT / "tb/scoreboard/codec_scoreboard.sv").read_text(encoding="utf-8")
         self.assertIn("observed_cycle", item)
         self.assertIn("item.observed_cycle", monitor)
+        predictor = (ROOT / "tb/adapters/toy_codec_reference_model.sv").read_text()
+        self.assertIn("expected.observed_cycle = request.observed_cycle", predictor)
         self.assertIn("expected_cycle_q.push_back(item.observed_cycle)", scoreboard)
         self.assertIn("rsp_valid && cfg.vif.mon_cb.rsp_ready", scoreboard)
 
