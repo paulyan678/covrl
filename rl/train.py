@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from rl.actions import DEFAULT_ACTION_CATALOG
+from rl.checkpoint import environment_contract, write_checkpoint_metadata
 from rl.env import GYMNASIUM_AVAILABLE, CoverageGuidedCodecEnv, EpisodeConfig
 from rl.evaluate import evaluate_policy
 from rl.metrics import write_run_metrics, write_training_progress
@@ -60,7 +61,6 @@ def train_maskable_ppo(config: TrainingConfig, output_dir: Path) -> TrainingArti
         from stable_baselines3.common.callbacks import (
             BaseCallback,
             CallbackList,
-            CheckpointCallback,
         )
     except ImportError as exc:  # pragma: no cover - depends on optional install
         raise RuntimeError("install the RL extra: python -m pip install -e '.[rl]'") from exc
@@ -104,11 +104,15 @@ def train_maskable_ppo(config: TrainingConfig, output_dir: Path) -> TrainingArti
                 rows.append(row)
             return True
 
-    checkpoint_callback = CheckpointCallback(
-        save_freq=config.checkpoint_frequency,
-        save_path=str(checkpoint_dir),
-        name_prefix="maskable_ppo",
-    )
+    class VerifiedCheckpointCallback(BaseCallback):
+        def _on_step(self) -> bool:
+            if self.n_calls % config.checkpoint_frequency == 0:
+                path = checkpoint_dir / f"maskable_ppo_{self.num_timesteps}_steps.zip"
+                self.model.save(path)
+                write_checkpoint_metadata(path, env)
+            return True
+
+    checkpoint_callback = VerifiedCheckpointCallback()
     callbacks = CallbackList([checkpoint_callback, TrainingProgressCallback()])
     model = MaskablePPO(
         "MultiInputPolicy",
@@ -126,6 +130,7 @@ def train_maskable_ppo(config: TrainingConfig, output_dir: Path) -> TrainingArti
     final_stem = output_dir / "maskable_ppo_final"
     model.save(final_stem)
     final_model = final_stem.with_suffix(".zip")
+    write_checkpoint_metadata(final_model, env)
     write_training_progress(metrics_dir, rows)
 
     evaluation = evaluate_policy(
@@ -149,6 +154,7 @@ def train_maskable_ppo(config: TrainingConfig, output_dir: Path) -> TrainingArti
         "backend": "deterministic_mock",
         "catalog_digest": DEFAULT_ACTION_CATALOG.digest,
         "coverage_bin_digest": env.backend.bin_digest,
+        "environment": environment_contract(env),
         "config": asdict(config),
         "dependencies": {
             package: _package_version(package)
