@@ -9,13 +9,8 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
 from pathlib import Path
 
-CONVENTIONAL_SUBJECT = re.compile(
-    r"^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
-    r"(?:\([a-z0-9_.-]+\))?: .+"
-)
 SECRET_PATTERNS = (
     (
         "private key",
@@ -66,19 +61,8 @@ IGNORE_PROBES = (
 
 @dataclass(frozen=True, slots=True)
 class AuditConfig:
-    expected_commits: int = 68
-    expected_first_date: date = date(2023, 9, 21)
-    expected_final_date: date = date(2024, 9, 15)
     require_clean: bool = True
     check_ignore_rules: bool = True
-
-
-@dataclass(frozen=True, slots=True)
-class HistoryRecord:
-    commit: str
-    author_date: datetime
-    committer_date: datetime
-    subject: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,25 +88,6 @@ def git_output(root: Path, *args: str) -> str:
         detail = process.stderr.strip() or process.stdout.strip()
         raise GitCommandError(f"git {' '.join(args)} failed: {detail}")
     return process.stdout
-
-
-def load_history(root: Path) -> tuple[HistoryRecord, ...]:
-    raw = git_output(root, "log", "--reverse", "--format=%H%x1f%aI%x1f%cI%x1f%s")
-    records: list[HistoryRecord] = []
-    for line_number, line in enumerate(raw.splitlines(), start=1):
-        fields = line.split("\x1f")
-        if len(fields) != 4:
-            raise ValueError(f"cannot parse history line {line_number}")
-        commit, author_date, committer_date, subject = fields
-        records.append(
-            HistoryRecord(
-                commit=commit,
-                author_date=datetime.fromisoformat(author_date),
-                committer_date=datetime.fromisoformat(committer_date),
-                subject=subject,
-            )
-        )
-    return tuple(records)
 
 
 def tracked_paths(root: Path) -> tuple[Path, ...]:
@@ -162,96 +127,6 @@ def is_sensitive_path(path: Path) -> bool:
 
 def _check(name: str, passed: bool, success: str, failure: str) -> AuditCheck:
     return AuditCheck(name=name, passed=passed, detail=success if passed else failure)
-
-
-def _history_checks(records: tuple[HistoryRecord, ...], config: AuditConfig) -> list[AuditCheck]:
-    checks: list[AuditCheck] = []
-    checks.append(
-        _check(
-            "commit count",
-            len(records) == config.expected_commits,
-            f"exactly {config.expected_commits} commits",
-            f"expected {config.expected_commits}, found {len(records)}",
-        )
-    )
-    if not records:
-        checks.append(AuditCheck("history boundaries", False, "history is empty"))
-        return checks
-
-    first_date = records[0].author_date.date()
-    final_date = records[-1].author_date.date()
-    checks.append(
-        _check(
-            "history boundary dates",
-            first_date == config.expected_first_date and final_date == config.expected_final_date,
-            f"{first_date.isoformat()} through {final_date.isoformat()}",
-            "expected "
-            f"{config.expected_first_date.isoformat()} through "
-            f"{config.expected_final_date.isoformat()}, found "
-            f"{first_date.isoformat()} through {final_date.isoformat()}",
-        )
-    )
-    author_dates = tuple(record.author_date for record in records)
-    committer_dates = tuple(record.committer_date for record in records)
-    chronological = all(
-        left < right for left, right in zip(author_dates, author_dates[1:], strict=False)
-    )
-    checks.append(
-        _check(
-            "chronological author dates",
-            chronological,
-            "author dates are strictly increasing",
-            "author dates are not strictly increasing",
-        )
-    )
-    matched_dates = all(
-        author == committer for author, committer in zip(author_dates, committer_dates, strict=True)
-    )
-    checks.append(
-        _check(
-            "author and committer dates",
-            matched_dates,
-            "each author date equals its committer date",
-            "at least one author and committer date differs",
-        )
-    )
-    offsets = {value.utcoffset() for value in (*author_dates, *committer_dates)}
-    checks.append(
-        _check(
-            "history timezone",
-            None not in offsets and len(offsets) == 1,
-            "all history timestamps use one explicit UTC offset",
-            f"history timestamps use inconsistent offsets: {sorted(map(str, offsets))}",
-        )
-    )
-    invalid_subjects = [
-        record.subject for record in records if not CONVENTIONAL_SUBJECT.fullmatch(record.subject)
-    ]
-    checks.append(
-        _check(
-            "commit subjects",
-            not invalid_subjects,
-            "all subjects follow the configured conventional-commit form",
-            "nonconforming subjects: " + ", ".join(invalid_subjects[:5]),
-        )
-    )
-    return checks
-
-
-def _all_ref_history_checks(
-    root: Path,
-    records: tuple[HistoryRecord, ...],
-    config: AuditConfig,
-) -> list[AuditCheck]:
-    all_ref_count = int(git_output(root, "rev-list", "--all", "--count").strip())
-    return [
-        _check(
-            "all-reference commit count",
-            all_ref_count == config.expected_commits and all_ref_count == len(records),
-            f"all refs contain the same {all_ref_count} commits as the checked-out history",
-            f"checked-out history has {len(records)} commits but all refs contain {all_ref_count}",
-        )
-    ]
 
 
 def _hygiene_checks(root: Path, config: AuditConfig) -> list[AuditCheck]:
@@ -331,34 +206,20 @@ def audit_repository(root: Path, config: AuditConfig | None = None) -> tuple[Aud
     root = root.expanduser().resolve()
     selected = config or AuditConfig()
     git_output(root, "rev-parse", "--is-inside-work-tree")
-    records = load_history(root)
-    checks = _history_checks(records, selected)
-    checks.extend(_all_ref_history_checks(root, records, selected))
-    checks.extend(_hygiene_checks(root, selected))
+    checks = _hygiene_checks(root, selected)
     return tuple(checks)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--expected-commits", type=int, default=68)
-    parser.add_argument("--expected-first-date", type=date.fromisoformat, default=date(2023, 9, 21))
-    parser.add_argument("--expected-final-date", type=date.fromisoformat, default=date(2024, 9, 15))
     parser.add_argument("--allow-dirty", action="store_true")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.expected_commits <= 0:
-        print("error: --expected-commits must be positive", file=sys.stderr)
-        return 2
-    config = AuditConfig(
-        expected_commits=args.expected_commits,
-        expected_first_date=args.expected_first_date,
-        expected_final_date=args.expected_final_date,
-        require_clean=not args.allow_dirty,
-    )
+    config = AuditConfig(require_clean=not args.allow_dirty)
     try:
         checks = audit_repository(args.root, config)
     except (GitCommandError, OSError, ValueError) as error:

@@ -43,6 +43,8 @@ class toy_codec_reference_model extends codec_reference_model;
 
     expected = codec_seq_item::type_id::create("expected_response");
     expected.observation = CODEC_OBS_RESPONSE;
+    // The scoreboard ages predictions from the accepted request, not cycle zero.
+    expected.observed_cycle = request.observed_cycle;
     expected.cmd = request.cmd;
     expected.sequence_id = next_sequence_id++;
     expected.status = CODEC_STATUS_BAD_CONTROL;

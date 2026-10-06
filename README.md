@@ -328,10 +328,16 @@ python -m rl.compare \
   --episodes 20 --budget 200 --seed 2024 --coverage-target 0.99
 ```
 
-Training writes a stable action catalog, periodic checkpoints, final model, dependency/configuration
+Training writes a stable action catalog, periodic checkpoints with adjacent `.zip.metadata.json`
+sidecars, final model, dependency/configuration
 metadata, coverage/reward progression in JSON and CSV, summaries, and post-training evaluation
 metrics. Evaluation writes per-step and per-episode metrics. Comparison writes both strategy traces
 and `comparison.json`. Checkpoints and generated metrics are ignored by Git.
+
+Both evaluation CLIs validate each checkpoint sidecar before loading: model SHA-256, ordered action
+and coverage-bin digests, backend type, and observation schema/history length must match. Keep the
+sidecar with its zip. Older checkpoints without sidecars must be retrained; do not invent matching
+metadata for them. A hash is not a trust signature: load only trusted models.
 
 The evaluator passes an action mask to every prediction and rejects a policy that selects an excluded
 action before calling the backend. This applies masking during both training and inference. See
@@ -355,7 +361,7 @@ action before calling the backend. This applies masking during both training and
 
 ## Validation boundaries
 
-Validated locally without a simulator:
+Validated locally with Python 3.12 and Icarus 13:
 
 - strict configuration parsing and invalid-input handling;
 - VCS, Questa, and Icarus command generation in dry-run mode;
@@ -366,11 +372,17 @@ Validated locally without a simulator:
 - real short MaskablePPO training, checkpoint save/load, masked evaluation, and comparison;
 - Python unit tests, Ruff formatting/linting, and MyPy type checking.
 
-This host did not provide VCS, Questa/ModelSim, Icarus, or another HDL simulator. Consequently, local
-validation does not claim HDL compilation, UVM execution, assertion firing, VDB/UCDB creation,
-vendor coverage merging, waveform correctness, or real codec-IP behavior. PPO end-to-end training
-was executed against the deterministic mock backend only. Exact commands and results are recorded
-in [docs/validation.md](docs/validation.md).
+The portable bench now compiles and executes the actual toy RTL. It checks 28 responses,
+latencies 0–15, response backpressure, invalid input, STOP, and in-flight reset cancellation.
+Mutation tests confirm it fails on corrupted response data and premature response release.
+This flow does **not** compile the UVM environment or exercise concurrent SVA. VCS/Questa
+UVM execution, VDB/UCDB creation, vendor coverage merging, waveform correctness, and real
+codec-IP integration remain unverified here. PPO training and its comparison use the
+deterministic mock backend only. Exact results are in [docs/validation.md](docs/validation.md).
+
+CI runs Python checks, mock orchestration, actual portable RTL, and a separate real PPO
+checkpoint smoke. Bootstrap and CI use the tested direct dependency snapshot in
+`constraints.txt` on Python 3.12; transitive dependencies remain resolver-managed.
 
 ## Known limitations
 
@@ -397,7 +409,6 @@ in [docs/validation.md](docs/validation.md).
 4. Add a batched simulator-backed `CoverageBackend` so PPO can amortize compilation and startup.
 5. Extend the action vocabulary to chroma format, tiles/slices, rate control, entropy mode, and
    reference-picture choices supported by the target IP.
-6. Add CI jobs for Python validation, mock regression, and any simulator licenses available to the
-   organization.
+6. Add licensed simulator runners to CI when those tools are available.
 
 The implementation assumptions are recorded in [docs/assumptions.md](docs/assumptions.md).

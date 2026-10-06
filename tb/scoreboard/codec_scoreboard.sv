@@ -45,6 +45,7 @@ class codec_scoreboard extends uvm_scoreboard;
       if (cfg.vif.mon_cb.rsp_valid && cfg.vif.mon_cb.rsp_ready)
         continue;
       while (expected_q.size() > 0 && expected_cycle_q.size() > 0 &&
+             cycle_count >= expected_cycle_q[0] &&
              cycle_count - expected_cycle_q[0] > cfg.scoreboard_timeout_cycles) begin
         timed_out_item = expected_q.pop_front();
         void'(expected_cycle_q.pop_front());

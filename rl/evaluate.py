@@ -9,6 +9,7 @@ from typing import Protocol
 
 import numpy as np
 
+from rl.checkpoint import load_verified_policy
 from rl.env import CoverageGuidedCodecEnv, EpisodeConfig
 from rl.metrics import EpisodeMetric, StepMetric, write_run_metrics
 
@@ -145,16 +146,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    try:
-        from sb3_contrib import MaskablePPO
-    except ImportError as exc:  # pragma: no cover - depends on optional install
-        raise SystemExit("install the RL extra: python -m pip install -e '.[rl]'") from exc
-    model = MaskablePPO.load(args.model)
-    model.set_random_seed(args.seed)
     episode_config = EpisodeConfig(
         max_steps=args.max_steps,
         coverage_target=args.coverage_target,
     )
+    validation_env = CoverageGuidedCodecEnv(episode_config=episode_config)
+    try:
+        model = load_verified_policy(args.model, validation_env)
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
+    finally:
+        validation_env.close()
+
     episodes = evaluate_policy(
         model,
         lambda: CoverageGuidedCodecEnv(episode_config=episode_config),

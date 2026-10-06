@@ -1,0 +1,47 @@
+name: Verification
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python-and-portable-hdl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -c constraints.txt -e '.[test]'
+      - run: sudo apt-get update && sudo apt-get install -y iverilog
+      - run: python -m ruff check regression rl scripts tests
+      - run: python -m ruff format --check regression rl scripts tests
+      - run: python -m unittest discover -s tests -v
+      - run: python scripts/regress.py full --simulator mock --jobs 3 --seed-base 2024 --output outputs/ci/mock
+      - run: python scripts/regress.py suite portable --simulator iverilog --seed-base 2024 --output outputs/ci/hdl --reruns 0
+      - run: python scripts/audit_repo.py
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: regression-evidence
+          path: outputs/ci
+  ppo-checkpoint-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '1'
+      RUN_RL_TRAINING_SMOKE: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -c constraints.txt -e '.[test,rl]'
+      - run: python -m mypy regression rl scripts tests
+      - run: python -m unittest tests.test_rl_training_config tests.test_checkpoint -v

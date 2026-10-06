@@ -14,6 +14,6 @@ fi
 
 "$python_bin" -m venv "$venv_dir"
 "$venv_dir/bin/python" -m pip install --upgrade pip
-"$venv_dir/bin/python" -m pip install -e ".[${extras}]"
+"$venv_dir/bin/python" -m pip install -c constraints.txt -e ".[${extras}]"
 
 echo "Environment ready. Activate it with: . $venv_dir/bin/activate"

@@ -11,6 +11,7 @@ from statistics import mean
 
 import numpy as np
 
+from rl.checkpoint import load_verified_policy
 from rl.env import CoverageGuidedCodecEnv, EpisodeConfig
 from rl.evaluate import MaskedPolicy, evaluate_policy
 from rl.metrics import (
@@ -146,17 +147,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    try:
-        from sb3_contrib import MaskablePPO
-    except ImportError as exc:  # pragma: no cover - depends on optional install
-        raise SystemExit("install the RL extra: python -m pip install -e '.[rl]'") from exc
-
-    model = MaskablePPO.load(args.model)
     episode_config = EpisodeConfig(
         max_steps=args.budget,
         coverage_target=args.coverage_target,
         stale_step_limit=None,
     )
+
+    validation_env = CoverageGuidedCodecEnv(episode_config=episode_config)
+    try:
+        model = load_verified_policy(args.model, validation_env)
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
+    finally:
+        validation_env.close()
 
     def factory() -> CoverageGuidedCodecEnv:
         return CoverageGuidedCodecEnv(episode_config=episode_config)

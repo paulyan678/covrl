@@ -205,7 +205,7 @@ reproducible engineering comparison, not a statistical proof of superiority.
 Training writes:
 
 - `action_catalog.json` and `training_metadata.json`;
-- periodic `checkpoints/*.zip` and `maskable_ppo_final.zip`;
+- periodic `checkpoints/*.zip` and `maskable_ppo_final.zip`, each with a `.zip.metadata.json` sidecar;
 - JSON and CSV training progression plus a compact summary;
 - post-training evaluation JSON, CSV, and summary.
 
@@ -231,3 +231,15 @@ recreated responsibly.
 For expensive simulators, one action need not mean one process launch. A backend can execute a batch,
 return incremental coverage after each accepted transaction, or treat one policy decision as a
 short sequence while retaining explicit reward attribution.
+
+## Checkpoint compatibility decision
+
+A saved network can have the correct dimensions but assign an action index or observation bin to
+the wrong meaning. `rl.checkpoint` therefore checks ordered catalog/bin digests and the explicit
+observation schema/history length before deserialization. The model SHA-256 binds a sidecar to
+one zip and catches accidental checkpoint/metadata mixups. Every periodic checkpoint receives its
+own sidecar at save time. Old models without this evidence fail closed; retrain them.
+
+Evaluation budgets and coverage targets may differ from training by design (for matched-budget
+comparisons). They do not change feature layout. Bump `observation_schema` whenever encodings or
+feature meanings change. Digests are integrity checks, not authentication: only load trusted models.

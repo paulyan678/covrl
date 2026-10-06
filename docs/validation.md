@@ -3,7 +3,12 @@
 This record separates executable local evidence from simulator plans. Generated logs, coverage
 artifacts, reports, and checkpoints are intentionally ignored; the commands below reproduce them.
 
-## Validation environment
+## Prior validation record (retained)
+
+The following environment and results were recorded before the reliability update below.
+They are historical claims, not a substitute for current CI.
+
+### Validation environment
 
 - macOS 26.5.2 on arm64
 - Python 3.10.14
@@ -94,9 +99,64 @@ command plans, not successful RTL/UVM runs. VDB/UCDB creation, vendor coverage m
 waveform correctness, assertion behavior in a simulator, and integration with real codec IP remain
 to be validated where those tools or IP are available.
 
-The final history audit must observe commit 68 itself, so it is run immediately after that commit:
+Repository hygiene no longer prescribes commit counts, dates, subjects, or identical histories
+across branches. It still checks tracked artifacts, ignored credential paths, and high-confidence
+secret patterns in files and **all-ref patch history**. Normal later commits do not invalidate it.
+
+## Reliability validation — 2026-10-06
+
+Executed on macOS arm64, Python 3.12.14 and Icarus Verilog 13.0. Direct Python dependency versions
+are in `constraints.txt`; this snapshot is not a full transitive lockfile.
+
+- Baseline Python: 117 passed, one opt-in training test skipped.
+- Revised Python: 127 tests passed with `RUN_RL_TRAINING_SMOKE=1` (includes actual PPO
+  training/reload and three real HDL tests). Ruff, formatting and MyPy passed; `pip check` passed.
+- Actual portable RTL: 28 checked responses across latency 0–15, backpressure, malformed input,
+  stop/reconfigure behavior, and cancellation of an in-flight response by reset. Negative mutation
+  tests fail as intended when response data is corrupted or a stalled response is dropped.
+- Full mock regression: six tests passed. This is orchestration evidence, not UVM execution.
+- UVM predictor now preserves the accepted request cycle; timeout arithmetic guards against unsigned
+  underflow. The normal UVM test delays requests beyond the scoreboard timeout to expose regressions.
+  This UVM path has **not** been compiled or run here; licensed-simulator validation remains required.
+- All final and periodic checkpoints from the real 128-step PPO smoke were loaded through the
+  checked loader and evaluated. Missing/malformed sidecars, same-sized reordered actions/bins,
+  changed observation history, and swapped zip bytes are rejected by dedicated tests.
+
+### Bounded mock policy comparison
+
+Each of three training seeds received 256 PPO steps. Each saved model and constrained-random policy
+then used the same five evaluation seeds 5000–5004, a 32-action budget, target 0.99, and no stale-step
+termination. The deterministic backend makes these small repeated episodes highly correlated;
+this is an engineering smoke, not a benchmark of real verification effectiveness.
+
+| Training seed | PPO final coverage | Random final coverage | PPO normalized AUC | Random AUC |
+|:--|--:|--:|--:|--:|
+| 2024 | 0.07778 | 0.47778 | 0.07778 | 0.30417 |
+| 2025 | 0.34444 | 0.47778 | 0.27167 | 0.30417 |
+| 2026 | 0.32222 | 0.47778 | 0.30021 | 0.30417 |
+
+Mean final-coverage delta (PPO − random): **−0.22963**, sample standard deviation across training
+seeds **0.14796**. All three briefly trained policies lost to constrained-random. No training seed,
+failed run, or negative result was discarded; no claim of PPO improvement follows from this smoke.
 
 ```bash
+# Python 3.12; installs tested direct constraints
+./scripts/bootstrap.sh --rl
+. .venv/bin/activate
+OMP_NUM_THREADS=1 RUN_RL_TRAINING_SMOKE=1 python -m unittest discover -s tests -v
+python -m ruff check regression rl scripts tests
+python -m ruff format --check regression rl scripts tests
+python -m mypy regression rl scripts tests
+python scripts/regress.py suite portable --simulator iverilog --output outputs/verification/hdl --reruns 0
+python scripts/regress.py full --simulator mock --jobs 3 --seed-base 2024 --output outputs/verification/mock
+for seed in 2024 2025 2026; do
+  OMP_NUM_THREADS=1 python -m rl.train --output-dir outputs/verification/benchmark/$seed \
+    --timesteps 256 --seed $seed --max-steps 32 --checkpoint-frequency 128 \
+    --evaluation-episodes 1 --device cpu
+  OMP_NUM_THREADS=1 python -m rl.compare \
+    --model outputs/verification/benchmark/$seed/maskable_ppo_final.zip \
+    --output-dir outputs/verification/benchmark/$seed/comparison \
+    --episodes 5 --budget 32 --seed 5000 --coverage-target 0.99
+done
 python scripts/audit_repo.py
-git status --short
 ```
